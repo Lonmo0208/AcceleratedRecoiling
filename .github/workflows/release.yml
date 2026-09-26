@@ -173,15 +173,21 @@ jobs:
           fi
 
       - name: Publish to CurseForge and Modrinth
+        # Tag pushes only, so a manual run can never publish a version by accident.
+        # mc-publish handles both platforms and cross-posts them as one version.
         if: startsWith(github.ref, 'refs/tags/')
-        uses: ./.github/actions/publish-platforms
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
+          files: build/libs/!(*-sources|*-javadoc).jar
+
+          name: AcceleratedRecoiling ${{ steps.version.outputs.version }}
           version: ${{ steps.version.outputs.version }}
-          tag: ${{ steps.version.outputs.tag }}
-          minecraft-version: ${{ steps.version.outputs.mc_version }}
-          release-type: ${{ steps.version.outputs.release_type }}
-          loaders: '["neoforge"]'
-          curseforge-project-id: '1374622'
-          modrinth-project-id: 'mMXtqi5e'
-          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          version-type: ${{ steps.version.outputs.release_type }}
+          loaders: neoforge
+          game-versions: |
+            ${{ steps.version.outputs.mc_version }}
+
+          curseforge-id: '1374622'
+          modrinth-id: 'mMXtqi5e'
+          curseforge-token: ${{ secrets.CF_TOKEN }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
