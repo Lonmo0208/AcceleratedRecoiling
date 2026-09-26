@@ -16,9 +16,6 @@ permissions:
 
 jobs:
   release:
-    # Windows is required, not a preference: realtime-native.gradle only cross-compiles
-    # all four platform natives on Windows. Elsewhere it rewrites `targets` to the host
-    # platform alone, and the jar would ship with a single native.
     runs-on: windows-latest
     timeout-minutes: 90
 
@@ -26,11 +23,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '21'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -50,8 +47,6 @@ jobs:
             exit 1
           fi
 
-          # Tags are v-prefixed (v26.2.0) but mod_version must stay bare (26.2.0),
-          # so it lands in the jar name and neoforge.mods.toml without the prefix.
           if [ "$EVENT_NAME" = "push" ]; then
             tag="$GITHUB_REF_NAME"
             version="${tag#v}"
@@ -112,9 +107,9 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          # GitHub runs bash with -e -o pipefail, so piping gradle into tee would abort
-          # the step at the first failure and lose the rest of the log. Capture the full
-          # output, surface the tail, then propagate the real exit status.
+          # GitHub runs bash with -e -o pipefail, so `gradlew | tee` would abort the
+          # step at the first failure and lose the rest of the log. Capture the full
+          # output to a file, surface the tail, then propagate the real exit status.
           cmd //c "gradlew.bat clean jar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace" > /tmp/ar-build.log 2>&1
           status=$?
           tail -n 120 /tmp/ar-build.log || true
@@ -147,7 +142,7 @@ jobs:
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
-          name: acceleratedrecoiling-26.2
+          name: acceleratedrecoiling
           path: build/libs/*.jar
           if-no-files-found: error
 
@@ -178,16 +173,21 @@ jobs:
           fi
 
       - name: Publish to CurseForge and Modrinth
-        # Only on a tag push, so a manual run cannot publish the wrong version.
+        # Tag pushes only, so a manual run can never publish a version by accident.
+        # mc-publish handles both platforms and cross-posts them as one version.
         if: startsWith(github.ref, 'refs/tags/')
-        uses: ./.github/actions/publish-platforms
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
+          files: build/libs/!(*-sources|*-javadoc).jar
+
+          name: AcceleratedRecoiling ${{ steps.version.outputs.version }}
           version: ${{ steps.version.outputs.version }}
-          tag: ${{ steps.version.outputs.tag }}
-          minecraft-version: ${{ steps.version.outputs.mc_version }}
-          release-type: ${{ steps.version.outputs.release_type }}
-          loaders: '["neoforge"]'
-          curseforge-project-id: '1374622'
-          modrinth-project-id: 'mMXtqi5e'
-          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          version-type: ${{ steps.version.outputs.release_type }}
+          loaders: neoforge
+          game-versions: |
+            ${{ steps.version.outputs.mc_version }}
+
+          curseforge-id: '1374622'
+          modrinth-id: 'mMXtqi5e'
+          curseforge-token: ${{ secrets.CF_TOKEN }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
