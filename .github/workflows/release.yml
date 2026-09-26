@@ -107,12 +107,16 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          # GitHub runs bash with -e -o pipefail, so `gradlew | tee` would abort the
-          # step at the first failure and lose the rest of the log. Capture the full
-          # output to a file, surface the tail, then propagate the real exit status.
-          cmd //c "gradlew.bat clean jar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace" > /tmp/ar-build.log 2>&1
+          # Two traps here, both of which have bitten this workflow before:
+          #  1. GitHub runs bash with -e, so a failing command aborts the step and any
+          #     later `tail` of a captured log never runs, losing the only diagnostics.
+          #     Writing with `tee` instead keeps the output on the console as it happens.
+          #  2. `status=$?` returns 0 by itself, so the exit status must be captured in
+          #     the same command list as the build, not on the following line.
+          set +e
+          set -o pipefail
+          cmd //c "gradlew.bat clean jar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace" 2>&1 | tee /tmp/ar-build.log
           status=$?
-          tail -n 120 /tmp/ar-build.log || true
           echo "gradle exit status: $status"
           exit "$status"
 
