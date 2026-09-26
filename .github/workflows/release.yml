@@ -82,6 +82,35 @@ jobs:
             exit 1
           fi
 
+      - name: Diagnose LivingEntity.doPush visibility
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+
+          echo "===== java / javap ====="
+          java -version 2>&1 || true
+          command -v javap || echo "WARN: javap not on PATH"
+
+          echo "===== every jar containing LivingEntity.class ====="
+          shopt -s nullglob
+          found=0
+          for jar in build/moddev/artifacts/*.jar "$HOME"/.gradle/caches/modules-2/files-2.1/net.neoforged/*/*/*/*.jar; do
+            if unzip -l "$jar" 2>/dev/null | grep -q 'net/minecraft/world/entity/LivingEntity\.class'; then
+              found=$((found + 1))
+              echo "--- $jar"
+              javap -p -classpath "$jar" net.minecraft.world.entity.LivingEntity 2>&1 | grep -E 'doPush|abstract class' || echo "    (no doPush)"
+            fi
+          done
+          echo "jars containing LivingEntity.class: $found"
+
+          echo "===== access transformer entries in the produced jar ====="
+          for jar in build/libs/*.jar; do
+            echo "--- $jar"
+            unzip -p "$jar" accesstransformer.cfg 2>/dev/null || echo "    (no accesstransformer.cfg at jar root)"
+            unzip -p "$jar" META-INF/accesstransformer.cfg 2>/dev/null || echo "    (none under META-INF/)"
+          done
+
       - name: Build
         shell: bash
         run: |
