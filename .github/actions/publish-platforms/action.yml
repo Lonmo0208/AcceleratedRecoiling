@@ -64,31 +64,30 @@ runs:
 
         status=0
 
+        # The response body goes straight to stdout so it always lands in the CI log.
+        # An earlier version wrote it to a temp file and re-read it, which swallowed
+        # the body exactly when it mattered -- on a 4xx.
+        # --fail-with-body makes curl exit non-zero on HTTP errors while still
+        # printing the body, so both the log and the exit status are useful.
         echo "===== CurseForge (project $AR_CF_PROJECT) ====="
-        http=$(curl -sS -o /tmp/cf.json -w '%{http_code}' \
-          -X POST "https://minecraft.curseforge.com/api/projects/${AR_CF_PROJECT}/upload-file" \
+        curl -sS --fail-with-body -X POST "https://minecraft.curseforge.com/api/projects/${AR_CF_PROJECT}/upload-file" \
           -H "X-Api-Token: ${AR_CF_TOKEN}" \
           -F "metadata={\"changelog\":\"See the GitHub release notes.\",\"changelogType\":\"markdown\",\"displayName\":\"AcceleratedRecoiling ${AR_VERSION}\",\"releaseType\":\"${AR_RELEASE_TYPE}\",\"gameVersions\":[\"${AR_MC_VERSION}\",\"NeoForge\"],\"relations\":{\"projects\":[]}};type=application/json" \
-          -F "file=@${jar}") || true
-        if [ "$http" = "200" ]; then
-          echo "CurseForge OK: $(cat /tmp/cf.json || true)"
-        else
-          echo "CurseForge FAILED (http $http)" >&2
-          cat /tmp/cf.json 2>/dev/null >&2 || true
-          status=1
-        fi
+          -F "file=@${jar}" \
+          -w '\nCurseForge http status: %{http_code}\n'
+        cf_status=$?
+        echo "CurseForge curl exit status: $cf_status"
 
         echo "===== Modrinth (project $AR_MR_PROJECT) ====="
-        http=$(curl -sS -o /tmp/mr.json -w '%{http_code}' \
-          -X POST "https://api.modrinth.com/v2/version" \
+        curl -sS --fail-with-body -X POST "https://api.modrinth.com/v2/version" \
           -H "Authorization: ${AR_MR_TOKEN}" \
           -F "data={\"name\":\"AcceleratedRecoiling ${AR_VERSION}\",\"version_number\":\"${AR_VERSION}\",\"changelog\":\"See the GitHub release notes.\",\"dependencies\":[],\"game_versions\":[\"${AR_MC_VERSION}\"],\"version_type\":\"${AR_RELEASE_TYPE}\",\"loaders\":${AR_LOADERS},\"featured\":false,\"project_id\":\"${AR_MR_PROJECT}\"};type=application/json" \
-          -F "file=@${jar}") || true
-        if [ "$http" = "200" ]; then
-          echo "Modrinth OK: $(cat /tmp/mr.json || true)"
-        else
-          echo "Modrinth FAILED (http $http)" >&2
-          cat /tmp/mr.json 2>/dev/null >&2 || true
+          -F "file=@${jar}" \
+          -w '\nModrinth http status: %{http_code}\n'
+        mr_status=$?
+        echo "Modrinth curl exit status: $mr_status"
+
+        if [ "$cf_status" -ne 0 ] || [ "$mr_status" -ne 0 ]; then
           status=1
         fi
 
