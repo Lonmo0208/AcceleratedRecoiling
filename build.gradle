@@ -55,6 +55,9 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    accessTransformers.from(
+            layout.buildDirectory.file('generated/sources/modMetadata/META-INF/accesstransformer.cfg'))
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
