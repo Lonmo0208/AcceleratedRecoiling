@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.AbortableIterationConsumer;
+import net.minecraft.util.Continuation;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -88,9 +88,9 @@ public final class BatchedCollisions {
         access.ar$sectionStorage().forEachAccessibleNonEmptySection(area.inflate(1.0E-7), section -> {
             if (!((IndexedSection) section).ar$realtimeSection().softOnly(section)) {
                 empty[0] = false;
-                return AbortableIterationConsumer.Continuation.ABORT;
+                return Continuation.ABORT;
             }
-            return AbortableIterationConsumer.Continuation.CONTINUE;
+            return Continuation.CONTINUE;
         });
         if (empty[0] && !(area.getSize() < 1.0E-7)) {
             Profiler.get().incrementCounter("getEntities");
@@ -162,12 +162,12 @@ public final class BatchedCollisions {
             var view = index.view(section);
             if (view == null) {
                 supported[0] = false;
-                return AbortableIterationConsumer.Continuation.ABORT;
+                return Continuation.ABORT;
             }
 
             index.prepareBatch(epoch);
             frame.sections.add(view.retain());
-            return AbortableIterationConsumer.Continuation.CONTINUE;
+            return Continuation.CONTINUE;
         });
 
         return supported[0];
