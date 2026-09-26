@@ -23,11 +23,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      # Gradle 8.10 cannot itself run on Java 25: its Groovy build DSL is compiled by
+      # an older ASM and dies with "Unsupported class file major version 69". This
+      # branch's Java 25 requirement is declared in build.gradle as a toolchain, and
+      # Gradle provisions that JDK on its own, so the runtime JDK below stays on 21.
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '21'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
