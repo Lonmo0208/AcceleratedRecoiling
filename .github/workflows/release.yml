@@ -110,90 +110,11 @@ jobs:
           # GitHub runs bash with -e -o pipefail, so `gradlew | tee` would abort the
           # step at the first failure and lose the rest of the log. Capture the full
           # output to a file, surface the tail, then propagate the real exit status.
-          # --continue lets Gradle keep going where it can, so more of the intermediate
-          # artifacts exist for the diagnose step that follows.
-          cmd //c "gradlew.bat clean jar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace --continue --info" > /tmp/ar-build.log 2>&1
+          cmd //c "gradlew.bat clean jar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace" > /tmp/ar-build.log 2>&1
           status=$?
           tail -n 120 /tmp/ar-build.log || true
           echo "gradle exit status: $status"
           exit "$status"
-
-      - name: Diagnose LivingEntity.doPush visibility
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: |
-          # Must run AFTER the build (the artifacts do not exist before it) and also
-          # when the build failed. Purely diagnostic: every command is guarded and the
-          # step ends with `exit 0`, so it can never mask the real build outcome.
-          set -uo pipefail
-
-          echo "===== javac diagnostics from the build log ====="
-          if [ -f /tmp/ar-build.log ]; then
-            grep -nE 'error:|\.java:[0-9]+:|has protected access|cannot find symbol' /tmp/ar-build.log | head -n 60 || true
-            grep -nE 'items on the compile classpath' /tmp/ar-build.log | head -n 5 || true
-          else
-            echo "    no build log captured"
-          fi
-
-          echo "===== did createMinecraftArtifacts actually succeed? ====="
-          grep -nE 'Task :createMinecraftArtifacts|Completed recompile|Completed sourcesAndCompiledWithNeoForge|Task :compileJava' /tmp/ar-build.log 2>/dev/null | head -n 20 || true
-          grep -nE 'FAILED|What went wrong|Execution failed' /tmp/ar-build.log 2>/dev/null | head -n 10 || true
-
-          echo "===== the access transformer file that NeoForm is handed ====="
-          for at in build/generated/sources/modMetadata/META-INF/accesstransformer.cfg \
-                    src/main/resources/META-INF/accesstransformer.cfg \
-                    src/main/resources/accesstransformer.cfg \
-                    src/main/templates/META-INF/accesstransformer.cfg; do
-            if [ -f "$at" ]; then
-              echo "--- EXISTS: $at"
-              grep -n 'LivingEntity' "$at" || echo "    (no LivingEntity entry!)"
-            else
-              echo "--- MISSING: $at"
-            fi
-          done
-
-          echo "===== --access-transformer argument NeoForm was invoked with ====="
-          transformer_hit=$(grep -o -- '--access-transformer [^ ]*' /tmp/ar-build.log 2>/dev/null | head -n 5 || echo "none found")
-          echo "$transformer_hit"
-
-          echo "===== jars present after the build ====="
-          shopt -s nullglob
-          for jar in build/moddev/artifacts/*.jar build/libs/*.jar; do
-            echo "  $jar"
-          done
-
-          echo "===== where LivingEntity.doPush is visible from ====="
-          find build/moddev "$HOME/.gradle/caches" -name '*.jar' 2>/dev/null | head -n 4000 > /tmp/ar-jars.txt || true
-          total=$(wc -l < /tmp/ar-jars.txt || echo 0)
-          echo "jars to scan: $total"
-          pattern='net.minecraft.world.entity.LivingEntity'
-          hits=0
-          while read -r jar; do
-            if [ "$hits" -ge 10 ]; then
-              break
-            fi
-            if javap -p -classpath "$jar" "$pattern" 2>&1 | grep -E 'doPush|abstract class' > /tmp/ar-hit.txt; then
-              echo "--- $jar"
-              cat /tmp/ar-hit.txt || true
-              hits=$((hits + 1))
-            fi
-          done < /tmp/ar-jars.txt || true
-          echo "jars exposing LivingEntity.doPush: $hits"
-
-          echo "===== access transformer shipped in the produced jar ====="
-          for jar in build/libs/*.jar; do
-            echo "--- $jar"
-            unzip -p "$jar" accesstransformer.cfg 2>/dev/null || echo "    (nothing at jar root)"
-            unzip -p "$jar" META-INF/accesstransformer.cfg 2>/dev/null || echo "    (nothing under META-INF/)"
-          done || true
-
-          echo "===== last 60 lines of the build log ====="
-          tail -n 60 /tmp/ar-build.log 2>/dev/null || echo "    (none)"
-
-          # GitHub runs bash with -e; force a successful status so this purely
-          # diagnostic step can never mask or replace the real build outcome.
-          exit 0
 
       - name: Verify artifact
         shell: bash
