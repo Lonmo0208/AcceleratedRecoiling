@@ -189,5 +189,5 @@ jobs:
 
           curseforge-id: '1374622'
           modrinth-id: 'mMXtqi5e'
-          curseforge-token: ${{ secrets.CF_TOKEN }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
