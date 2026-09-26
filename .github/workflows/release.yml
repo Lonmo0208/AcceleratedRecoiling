@@ -150,7 +150,7 @@ jobs:
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
-          name: acceleratedrecoiling-26.2
+          name: acceleratedrecoiling-26.3
           path: build/libs/*.jar
           if-no-files-found: error
 
