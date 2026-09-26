@@ -68,8 +68,30 @@ jobs:
             echo "tag=$tag"
           } >> "$GITHUB_OUTPUT"
 
+          # CurseForge and Modrinth both key off the Minecraft version label.
+          mc_version=$(grep -E '^minecraft_version=' gradle.properties | head -n1 | cut -d= -f2- | tr -d '[:space:]')
+          if [ -z "$mc_version" ]; then
+            echo "minecraft_version not found in gradle.properties" >&2
+            exit 1
+          fi
+          echo "mc_version=$mc_version" >> "$GITHUB_OUTPUT"
+
+          # alpha/beta come from the tag or version name, e.g. v21.8.18-alpha.
+          # Anything else is a release, rather than silently shipping as alpha.
+          lowered=$(echo "$version" | tr '[:upper:]' '[:lower:]')
+          if [[ "$lowered" == *alpha* ]]; then
+            release_type=alpha
+          elif [[ "$lowered" == *beta* ]]; then
+            release_type=beta
+          else
+            release_type=release
+          fi
+          echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
+
           echo "version = $version (gradle.properties: $from_properties)"
           echo "tag     = $tag"
+          echo "mc      = $mc_version"
+          echo "type    = $release_type"
 
       - name: Check native toolchain release
         shell: bash
@@ -154,3 +176,18 @@ jobs:
             echo "Creating release $TAG"
             gh release create "$TAG" "$jar" --title "$TAG" --notes "Built from $GITHUB_SHA with mod_version=$VERSION."
           fi
+
+      - name: Publish to CurseForge and Modrinth
+        # Only on a tag push, so a manual run cannot publish the wrong version.
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: ./.github/actions/publish-platforms
+        with:
+          version: ${{ steps.version.outputs.version }}
+          tag: ${{ steps.version.outputs.tag }}
+          minecraft-version: ${{ steps.version.outputs.mc_version }}
+          release-type: ${{ steps.version.outputs.release_type }}
+          loaders: '["neoforge"]'
+          curseforge-project-id: '1374622'
+          modrinth-project-id: 'mMXtqi5e'
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
