@@ -2,6 +2,8 @@ package com.wiyuka.acceleratedrecoiling.natives.realtime;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.entity.EntitySection;
 import net.minecraft.world.phys.AABB;
@@ -10,6 +12,7 @@ import it.unimi.dsi.fastutil.ints.IntArrayList;
 public final class RealtimeSection {
     public static final class View {
         private final Entity[] entities;
+        private final BlockPos sectionPosition;
         private final ByteBuffer boxes;
         private final long address;
         private final int stride;
@@ -20,6 +23,7 @@ public final class RealtimeSection {
 
         private View(Entity[] entities, ByteBuffer boxes, int count, boolean quantized) {
             this.entities = entities;
+            this.sectionPosition = SectionPos.of(entities[0].blockPosition()).origin();
             this.boxes = boxes;
             this.address = RealtimeNative.address(boxes);
             this.stride = entities.length;
@@ -30,6 +34,10 @@ public final class RealtimeSection {
 
         public Entity[] entities() {
             return entities;
+        }
+
+        public BlockPos sectionPosition() {
+            return sectionPosition;
         }
 
         public long address() {

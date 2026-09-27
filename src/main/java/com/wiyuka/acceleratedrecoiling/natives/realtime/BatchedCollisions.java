@@ -124,7 +124,7 @@ public final class BatchedCollisions {
         try {
             long epoch = BatchedRules.epoch();
             var bounds = source.getBoundingBox();
-            if (!collectSections(frame, storage, bounds, epoch)) return false;
+            if (!collectSections(frame, level, storage, bounds, epoch)) return false;
 
             prepareSectionDescriptors(frame, source);
             return queryAndPush(source, level, bounds, frame, state, started);
@@ -152,6 +152,7 @@ public final class BatchedCollisions {
     }
 
     private static boolean collectSections(Frame frame,
+                                           ServerLevel level,
                                            EntitySectionStorage<Entity> storage,
                                            AABB bounds,
                                            long epoch) {
@@ -160,7 +161,7 @@ public final class BatchedCollisions {
         storage.forEachAccessibleNonEmptySection(bounds, section -> {
             var index = ((IndexedSection) section).ar$realtimeSection();
             var view = index.view(section);
-            if (view == null) {
+            if (view == null || !level.isPositionEntityTicking(view.sectionPosition())) {
                 supported[0] = false;
                 return Continuation.ABORT;
             }
