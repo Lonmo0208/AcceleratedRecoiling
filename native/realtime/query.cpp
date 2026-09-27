@@ -12,7 +12,7 @@ extern "C" {
 
 JNIEXPORT jint JNICALL Java_com_wiyuka_acceleratedrecoiling_natives_realtime_RealtimeNative_version(
         JNIEnv*, jclass) {
-    return 7;
+    return 8;
 }
 
 JNIEXPORT jint JNICALL Java_com_wiyuka_acceleratedrecoiling_natives_realtime_RealtimeNative_quantizationMinEntities(
@@ -44,7 +44,8 @@ JNIEXPORT jlong JNICALL Java_com_wiyuka_acceleratedrecoiling_natives_realtime_Re
 JNIEXPORT jlong JNICALL Java_com_wiyuka_acceleratedrecoiling_natives_realtime_RealtimeNative_queryBatch(
         JNIEnv* env, jclass, jobject sectionBuffer, jint sectionCount, jobject outputBuffer,
         jint sourceSection, jint sourceSlot, jdouble sourceX, jdouble sourceZ,
-        jdouble minX, jdouble minY, jdouble minZ, jdouble maxX, jdouble maxY, jdouble maxZ) {
+        jdouble minX, jdouble minY, jdouble minZ, jdouble maxX, jdouble maxY, jdouble maxZ,
+        jboolean retainCollisions) {
     const auto* sections = static_cast<const Section*>(env->GetDirectBufferAddress(sectionBuffer));
     auto* output = static_cast<std::int64_t*>(env->GetDirectBufferAddress(outputBuffer));
 
@@ -83,7 +84,8 @@ JNIEXPORT jlong JNICALL Java_com_wiyuka_acceleratedrecoiling_natives_realtime_Re
     ar::Query query{
         {minX, minY, minZ, maxX, maxY, maxZ},
         sourceX, sourceZ,
-        sourceSection, sourceSlot
+        sourceSection, sourceSlot,
+        retainCollisions != JNI_FALSE
     };
 
     return ar::batch(batchKernel, sections, sectionCount, static_cast<int>(entryCount), output, query);
