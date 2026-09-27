@@ -1,20 +1,22 @@
 package com.wiyuka.acceleratedrecoiling.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.wiyuka.acceleratedrecoiling.natives.realtime.BatchDiagnostics;
 import com.wiyuka.acceleratedrecoiling.natives.realtime.BatchedRules;
 import com.wiyuka.acceleratedrecoiling.natives.realtime.PushableCache;
 import com.wiyuka.acceleratedrecoiling.natives.realtime.PushableMemoryEntity;
+import com.wiyuka.acceleratedrecoiling.natives.realtime.RealtimeNative;
 import net.minecraft.world.entity.LivingEntity;
+import net.neoforged.neoforge.common.config.NeoForgeServerConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(LivingEntity.class)
 public abstract class PushableMemoryMixin implements PushableMemoryEntity {
     @Unique
-    private boolean ar$pushableValue;
+    private boolean ar$climbableValue;
 
     @Unique
     private boolean ar$pushableValid;
@@ -27,13 +29,18 @@ public abstract class PushableMemoryMixin implements PushableMemoryEntity {
         ar$pushableValid = false;
     }
 
-    @Inject(method = "isPushable", at = @At("HEAD"), cancellable = true)
-    private void ar$memoizedPushable(CallbackInfoReturnable<Boolean> cir) {
+    @WrapOperation(method = "isPushable", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/world/entity/LivingEntity;onClimbable()Z"))
+    private boolean ar$memoizedClimbable(LivingEntity entity, Operation<Boolean> original) {
+        if (!RealtimeNative.isEnabled() || NeoForgeServerConfig.INSTANCE.fullBoundingBoxLadders.get()
+                || !BatchedRules.plain(entity.getClass())) {
+            return original.call(entity);
+        }
+
         long epoch = BatchedRules.epoch();
         if (ar$pushableValid && ar$pushableEpoch == epoch) {
             if (BatchDiagnostics.ENABLED) PushableCache.holds++;
-            cir.setReturnValue(ar$pushableValue);
-            return;
+            return ar$climbableValue;
         }
 
         if (BatchDiagnostics.ENABLED) {
@@ -44,10 +51,9 @@ public abstract class PushableMemoryMixin implements PushableMemoryEntity {
             }
         }
 
-        LivingEntity self = (LivingEntity) (Object) this;
-        ar$pushableValue = self.isAlive() && !self.isSpectator() && !self.onClimbable();
-        ar$pushableValid = true;
+        ar$climbableValue = original.call(entity);
+        ar$pushableValid = !ar$climbableValue && BatchedRules.classify(entity) == BatchedRules.PUSHABLE;
         ar$pushableEpoch = epoch;
-        cir.setReturnValue(ar$pushableValue);
+        return ar$climbableValue;
     }
 }
