@@ -10,6 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.EntityGetter;
 import net.minecraft.world.level.CommonLevelAccessor;
+import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.entity.EntitySection;
 import net.minecraft.world.level.entity.EntitySectionStorage;
@@ -123,6 +124,10 @@ public final class BatchedRules {
     }
 
     public static int classify(Entity entity) {
+        return classify(entity, false);
+    }
+
+    static int classify(Entity entity, boolean allowUncachedState) {
         if (!plain(entity.getClass())) {
             return VANILLA_CALLBACKS;
         }
@@ -139,13 +144,16 @@ public final class BatchedRules {
             if (BatchDiagnostics.ENABLED) {
                 BatchDiagnostics.coldStates++;
             }
-            // 查询getInBlockState以获得与原版相同的blockstate判定
-            state = entity.getInBlockState();
+            if (!allowUncachedState) {
+                return VANILLA_CALLBACKS;
+            }
+            state = entity.level().getBlockState(entity.blockPosition());
         }
         if (state.getClass() != BlockState.class || !PLAIN_BLOCK.get(state.getBlock().getClass())) {
             return VANILLA_CALLBACKS;
         }
 
-        return state.is(BlockTags.CLIMBABLE) ? VANILLA_CALLBACKS : PUSHABLE;
+        return state.is(BlockTags.CLIMBABLE) || state.getBlock() instanceof TrapDoorBlock
+                ? VANILLA_CALLBACKS : PUSHABLE;
     }
 }

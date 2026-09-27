@@ -143,7 +143,7 @@ public final class BatchedCollisions {
                    source.level().getClass() != ServerLevel.class
                 || !BatchedRules.cleanWorld()
                 || NeoForgeServerConfig.INSTANCE.fullBoundingBoxLadders.get()
-                || BatchedRules.classify(source) != BatchedRules.PUSHABLE
+                || BatchedRules.classify(source, true) != BatchedRules.PUSHABLE
         ) {
             if (BatchDiagnostics.ENABLED) BatchDiagnostics.sourceRejected++;
             return false;
