@@ -1,4 +1,4 @@
-template<bool Quantized>
+template<bool Quantized, bool RetainCollisions>
 AR_TARGET
 static std::int64_t AR_BATCH(const Section* sections, int sectionCount, int entryCount,
         std::int64_t* output, const Query& query) {
@@ -125,7 +125,9 @@ static std::int64_t AR_BATCH(const Section* sections, int sectionCount, int entr
                 const unsigned pushMask = collisionMask & (pushXMask | pushZMask);
 
                 const std::int64_t firstHit = (std::int64_t(section) << 32) | std::uint32_t(firstSlot);
-                AR_STORE(output + collisionCount, firstHit, collisionMask);
+                if constexpr (RetainCollisions) {
+                    AR_STORE(output + collisionCount, firstHit, collisionMask);
+                }
                 AR_STORE(output + entryCount + pushCount, firstHit, pushMask);
                 collisionCount += std::popcount(collisionMask);
                 pushCount += std::popcount(pushMask);
@@ -133,7 +135,7 @@ static std::int64_t AR_BATCH(const Section* sections, int sectionCount, int entr
         }
 
         for (int slot = blockStart; slot < currentSection.count; ++slot) {
-            if (!scalarCandidate(entityData, stride, section, slot, entryCount,
+            if (!scalarCandidate<RetainCollisions>(entityData, stride, section, slot, entryCount,
                     output, query, collisionCount, pushCount)) {
                 return -1;
             }
