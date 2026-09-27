@@ -146,7 +146,7 @@ jobs:
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
-          name: acceleratedrecoiling
+          name: acceleratedrecoiling-${{ steps.version.outputs.version }}
           path: build/libs/*.jar
           if-no-files-found: error
 
@@ -173,7 +173,7 @@ jobs:
             gh release upload "$TAG" "$jar" --clobber
           else
             echo "Creating release $TAG"
-            gh release create "$TAG" "$jar" --title "$TAG" --notes "Built from $GITHUB_SHA with mod_version=$VERSION."
+            gh release create "$TAG" "$jar" --target "$GITHUB_SHA" --title "$TAG" --notes "Built from $GITHUB_SHA with mod_version=$VERSION."
           fi
 
       - name: Publish to CurseForge and Modrinth
