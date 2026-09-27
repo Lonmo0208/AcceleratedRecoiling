@@ -11,9 +11,9 @@ import net.minecraft.util.AbortableIterationConsumer;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.entity.EntitySectionStorage;
 import net.minecraft.world.level.entity.LevelEntityGetterAdapter;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.common.config.NeoForgeServerConfig;
 
@@ -203,7 +203,7 @@ public final class BatchedCollisions {
                                         long started) {
         IndexedEntity indexedSource = (IndexedEntity) source;
         state.queries++;
-        int crammingLimit = level.getGameRules().getInt(GameRules.RULE_MAX_ENTITY_CRAMMING);
+        int crammingLimit = level.getGameRules().get(GameRules.MAX_ENTITY_CRAMMING);
         long prepared = BatchDiagnostics.TIMING ? System.nanoTime() : 0;
         long counts = RealtimeNative.queryBatch(frame.sectionDescriptors, frame.sections.size(), frame.output, frame.sourceSection,
                 indexedSource.ar$sectionSlot(), source.getX(), source.getZ(),
