@@ -202,10 +202,12 @@ public final class BatchedCollisions {
                                         long started) {
         IndexedEntity indexedSource = (IndexedEntity) source;
         state.queries++;
+        int crammingLimit = level.getGameRules().get(GameRules.MAX_ENTITY_CRAMMING);
         long prepared = BatchDiagnostics.TIMING ? System.nanoTime() : 0;
         long counts = RealtimeNative.queryBatch(frame.sectionDescriptors, frame.sections.size(), frame.output, frame.sourceSection,
                 indexedSource.ar$sectionSlot(), source.getX(), source.getZ(),
-                bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ);
+                bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ,
+                crammingLimit > 0);
         long queried = BatchDiagnostics.TIMING ? System.nanoTime() : 0;
 
         if (BatchDiagnostics.TIMING) {
@@ -217,7 +219,7 @@ public final class BatchedCollisions {
             return false;
         }
 
-        dispatchPushes(source, level, frame, state, counts);
+        dispatchPushes(source, level, frame, state, counts, crammingLimit);
         if (BatchDiagnostics.TIMING) {
             BatchDiagnostics.dispatchNanos += System.nanoTime() - queried;
         }
@@ -229,7 +231,8 @@ public final class BatchedCollisions {
                                        ServerLevel level,
                                        Frame frame,
                                        State state,
-                                       long counts) {
+                                       long counts,
+                                       int crammingLimit) {
         if (counts < 0) {
             throw new IllegalStateException("Invalid native batch result: " + counts);
         }
@@ -245,12 +248,10 @@ public final class BatchedCollisions {
         state.candidates += total;
 
         boolean damaged = false;
-        if (total > 0) {
-            int limit = level.getGameRules().get(GameRules.MAX_ENTITY_CRAMMING);
-            if (limit > 0 && total > limit - 1 && source.getRandom().nextInt(4) == 0) {
-                source.hurtServer(level, source.damageSources().cramming(), 6.0F);
-                damaged = true;
-            }
+        if (total > 0 && crammingLimit > 0 && total > crammingLimit - 1
+                && source.getRandom().nextInt(4) == 0) {
+            source.hurtServer(level, source.damageSources().cramming(), 6.0F);
+            damaged = true;
         }
 
         int count = damaged ? total : nonzero;

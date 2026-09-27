@@ -53,16 +53,29 @@ static void check(const std::vector<Input>& inputs, const ar::Query& query, int 
     std::vector<std::int64_t> observed(reference.size());
     const int sectionCount = static_cast<int>(plan.size());
     const auto expected = ar::batch(ar::Kernel::Scalar, plan.data(), sectionCount, count, reference.data() + 2, query);
-    for (auto kernel : kernels) {
-        std::fill(observed.begin(), observed.end(), sentinel);
-        const auto result = ar::batch(kernel, plan.data(), sectionCount, count, observed.data() + 2, query);
-        const bool guardsIntact = observed[0] == sentinel && observed[1] == sentinel
-                && observed[2 * count + 2] == sentinel && observed[2 * count + 3] == sentinel;
-        const bool outputsMatch = result < 0 || reference == observed;
-        if (result != expected || !outputsMatch || !guardsIntact) {
-            throw std::runtime_error("Mismatch case=" + std::to_string(caseNumber) + " kernel=" + ar::kernelName(kernel));
+    for (bool retainCollisions : {true, false}) {
+        auto requested = query;
+        requested.retainCollisions = retainCollisions;
+        auto expectedOutput = reference;
+        if (!retainCollisions) {
+            std::fill(expectedOutput.begin() + 2, expectedOutput.begin() + count + 2, sentinel);
         }
-        ++checks;
+
+        for (auto kernel : kernels) {
+            std::fill(observed.begin(), observed.end(), sentinel);
+            const auto result = ar::batch(kernel, plan.data(), sectionCount, count, observed.data() + 2, requested);
+            const bool guardsIntact = observed[0] == sentinel && observed[1] == sentinel
+                    && observed[2 * count + 2] == sentinel && observed[2 * count + 3] == sentinel;
+            const bool unusedHalfIntact = retainCollisions || std::all_of(
+                    observed.begin() + 2, observed.begin() + count + 2,
+                    [](auto value) { return value == sentinel; });
+            const bool outputsMatch = result < 0 || expectedOutput == observed;
+            if (result != expected || !outputsMatch || !guardsIntact || !unusedHalfIntact) {
+                throw std::runtime_error("Mismatch case=" + std::to_string(caseNumber)
+                        + " kernel=" + ar::kernelName(kernel) + " retain=" + std::to_string(retainCollisions));
+            }
+            ++checks;
+        }
     }
 }
 
