@@ -10,6 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.EntityGetter;
 import net.minecraft.world.level.CommonLevelAccessor;
+import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.entity.EntitySection;
 import net.minecraft.world.level.entity.EntitySectionStorage;
@@ -18,8 +19,6 @@ import net.minecraft.server.ServerScoreboard;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.tags.BlockTags;
-import net.neoforged.neoforge.common.extensions.IBlockExtension;
-import net.neoforged.neoforge.common.CommonHooks;
 import org.spongepowered.asm.mixin.transformer.ClassInfo;
 
 public final class BatchedRules {
@@ -89,7 +88,7 @@ public final class BatchedRules {
     private static final ClassValue<Boolean> PLAIN_BLOCK = new ClassValue<>() {
         @Override
         protected Boolean computeValue(Class<?> type) {
-            return CLEAN.get(type) && CollisionMethods.inherited(type, "ladder");
+            return CLEAN.get(type);
         }
     };
 
@@ -118,11 +117,15 @@ public final class BatchedRules {
                 && CLEAN.get(EntitySectionStorage.class) && CLEAN.get(BlockState.class)
                 && CLEAN.get(Holder.Reference.class) && CLEAN.get(Scoreboard.class)
                 && CLEAN.get(ServerScoreboard.class) && CLEAN.get(SynchedEntityData.class)
-                && CLEAN.get(IBlockExtension.class) && CLEAN.get(CommonHooks.class) && CLEAN.get(EntityGetter.class)
+                && CLEAN.get(EntityGetter.class)
                 && CLEAN.get(CommonLevelAccessor.class);
     }
 
     public static int classify(Entity entity) {
+        return classify(entity, false);
+    }
+
+    static int classify(Entity entity, boolean allowUncachedState) {
         if (!plain(entity.getClass())) {
             return VANILLA_CALLBACKS;
         }
@@ -139,13 +142,16 @@ public final class BatchedRules {
             if (BatchDiagnostics.ENABLED) {
                 BatchDiagnostics.coldStates++;
             }
-            // 查询getInBlockState以获得与原版相同的blockstate判定
-            state = entity.getInBlockState();
+            if (!allowUncachedState) {
+                return VANILLA_CALLBACKS;
+            }
+            state = entity.level().getBlockState(entity.blockPosition());
         }
         if (state.getClass() != BlockState.class || !PLAIN_BLOCK.get(state.getBlock().getClass())) {
             return VANILLA_CALLBACKS;
         }
 
-        return state.is(BlockTags.CLIMBABLE) ? VANILLA_CALLBACKS : PUSHABLE;
+        return state.is(BlockTags.CLIMBABLE) || state.getBlock() instanceof TrapDoorBlock
+                ? VANILLA_CALLBACKS : PUSHABLE;
     }
 }

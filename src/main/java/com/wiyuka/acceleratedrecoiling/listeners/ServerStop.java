@@ -1,15 +1,13 @@
 package com.wiyuka.acceleratedrecoiling.listeners;
 
-import com.wiyuka.acceleratedrecoiling.AcceleratedRecoiling;
 import com.wiyuka.acceleratedrecoiling.natives.realtime.BatchedCollisions;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 
-@EventBusSubscriber(modid = AcceleratedRecoiling.MODID)
-public class ServerStop {
-    @SubscribeEvent
-    public static void onServerStop(ServerStoppingEvent event) {
-        BatchedCollisions.clear();
+public final class ServerStop {
+    private ServerStop() {
+    }
+
+    public static void register() {
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> BatchedCollisions.clear());
     }
 }

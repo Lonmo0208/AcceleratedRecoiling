@@ -5,18 +5,19 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.stream.Collectors;
-import net.neoforged.fml.ModList;
+import net.fabricmc.loader.api.FabricLoader;
 
 public final class LithiumCompatibility {
+    private static final String RULES = "/acceleratedrecoiling/lithium-mixins-fabric.txt";
     private static final Set<String> MIXINS = loadMixins();
 
     private LithiumCompatibility() {
     }
 
     private static Set<String> loadMixins() {
-        try (var input = LithiumCompatibility.class.getResourceAsStream("/acceleratedrecoiling/lithium-mixins.txt")) {
+        try (var input = LithiumCompatibility.class.getResourceAsStream(RULES)) {
             if (input == null) {
-                throw new IOException("Missing Lithium mixin rules");
+                throw new IOException("Missing Lithium mixin rules: " + RULES);
             }
 
             return new String(input.readAllBytes(), StandardCharsets.UTF_8).lines()
@@ -30,8 +31,7 @@ public final class LithiumCompatibility {
     }
 
     private static boolean isLoaded() {
-        var mods = ModList.get();
-        return mods != null && mods.isLoaded("lithium");
+        return FabricLoader.getInstance().isModLoaded("lithium");
     }
 
     public static boolean allows(String mixin) {

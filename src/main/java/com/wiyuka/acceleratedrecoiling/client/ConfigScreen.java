@@ -1,6 +1,7 @@
 package com.wiyuka.acceleratedrecoiling.client;
 
 import com.wiyuka.acceleratedrecoiling.config.FoldConfig;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
@@ -44,6 +45,6 @@ public class ConfigScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.gui.setScreen(parent);
+       Minecraft.getInstance().setScreenAndShow(parent);
     }
 }

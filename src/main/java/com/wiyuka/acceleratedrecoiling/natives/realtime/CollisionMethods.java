@@ -6,13 +6,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.level.LevelReader;
-import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.common.extensions.IBlockExtension;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -91,7 +88,7 @@ final class CollisionMethods {
             var references = new HashMap<String, List<MethodInsnNode>>();
 
             for (var method : type.methods) {
-                if (!method.name.equals("pushable") && !method.name.equals("soft") && !method.name.equals("ladder")) {
+                if (!method.name.equals("pushable") && !method.name.equals("soft")) {
                     continue;
                 }
 
@@ -100,6 +97,10 @@ final class CollisionMethods {
                     if (instruction instanceof MethodInsnNode call) {
                         calls.add(call);
                     }
+                }
+                if (method.name.equals("pushable")) {
+                    calls.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, Type.getInternalName(LivingEntity.class),
+                            "doPush", Type.getMethodDescriptor(Type.VOID_TYPE, Type.getType(Entity.class)), false));
                 }
                 references.put(method.name, List.copyOf(calls));
             }
@@ -117,7 +118,6 @@ final class CollisionMethods {
         living.isAlive();
         living.getHealth();
         living.isSleeping();
-        living.doPush(entity);
         living.push(entity);
 
         entity.getRootVehicle();
@@ -135,10 +135,5 @@ final class CollisionMethods {
     private static void soft(Entity entity) {
         entity.canBeCollidedWith(entity);
         entity.isSpectator();
-    }
-
-    private static void ladder(IBlockExtension block, BlockState state, LevelReader level,
-            BlockPos position, LivingEntity entity) {
-        block.isLadder(state, level, position, entity);
     }
 }

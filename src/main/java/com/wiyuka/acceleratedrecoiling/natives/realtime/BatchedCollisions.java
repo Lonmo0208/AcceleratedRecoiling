@@ -1,6 +1,7 @@
 package com.wiyuka.acceleratedrecoiling.natives.realtime;
 
 import com.wiyuka.acceleratedrecoiling.mixin.BatchedLevelAccess;
+import com.wiyuka.acceleratedrecoiling.mixin.LivingEntityDoPushInvoker;
 import com.wiyuka.acceleratedrecoiling.mixin.RealtimeGetterAccess;
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
@@ -15,7 +16,6 @@ import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.entity.EntitySectionStorage;
 import net.minecraft.world.level.entity.LevelEntityGetterAdapter;
 import net.minecraft.world.phys.AABB;
-import net.neoforged.neoforge.common.config.NeoForgeServerConfig;
 
 public final class BatchedCollisions {
     private static final int SECTION_ADDRESS_OFFSET = 0;
@@ -142,8 +142,7 @@ public final class BatchedCollisions {
         if (
                    source.level().getClass() != ServerLevel.class
                 || !BatchedRules.cleanWorld()
-                || NeoForgeServerConfig.INSTANCE.fullBoundingBoxLadders.get()
-                || BatchedRules.classify(source) != BatchedRules.PUSHABLE
+                || BatchedRules.classify(source, true) != BatchedRules.PUSHABLE
         ) {
             if (BatchDiagnostics.ENABLED) BatchDiagnostics.sourceRejected++;
             return false;
@@ -261,7 +260,7 @@ public final class BatchedCollisions {
             int sectionIndex = (int) (hit >>> Integer.SIZE);
             int entitySlot = (int) hit;
             Entity other = frame.sections.get(sectionIndex).entities()[entitySlot];
-            source.doPush(other);
+            ((LivingEntityDoPushInvoker) source).ar$doPush(other);
         }
 
         state.dispatched += count;
