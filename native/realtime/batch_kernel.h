@@ -30,6 +30,7 @@ struct Query {
     double z;
     int sourceSection;
     int sourceSlot;
+    bool retainCollisions = true;
 };
 
 enum class Kernel : int {

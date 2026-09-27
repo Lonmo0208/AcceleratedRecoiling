@@ -48,6 +48,7 @@ void quantizeBox(const double* bounds, std::int32_t* result) {
     }
 }
 
+template<bool RetainCollisions>
 static bool scalarCandidate(const double* data, int stride, int section, int slot, int entries,
         std::int64_t* output, const Query& q, int& selected, int& nonzero) {
     if (section == q.sourceSection && slot == q.sourceSlot) {
@@ -79,7 +80,10 @@ static bool scalarCandidate(const double* data, int stride, int section, int slo
     }
 
     const std::int64_t hit = (std::int64_t(section) << 32) | std::uint32_t(slot);
-    output[selected++] = hit;
+    if constexpr (RetainCollisions) {
+        output[selected] = hit;
+    }
+    ++selected;
 
     constexpr double pushThreshold = static_cast<double>(0.01f);
     if (std::fabs(q.x - x) >= pushThreshold || std::fabs(q.z - z) >= pushThreshold) {
@@ -89,6 +93,7 @@ static bool scalarCandidate(const double* data, int stride, int section, int slo
     return true;
 }
 
+template<bool RetainCollisions>
 static std::int64_t scalarBatch(const Section* plan, int sectionCount, int entries,
         std::int64_t* output, const Query& q) {
     int selected = 0;
@@ -97,7 +102,7 @@ static std::int64_t scalarBatch(const Section* plan, int sectionCount, int entri
     for (int s = 0; s < sectionCount; ++s) {
         const auto* data = reinterpret_cast<const double*>(plan[s].address);
         for (int i = 0; i < plan[s].count; ++i) {
-            if (!scalarCandidate(data, plan[s].stride, s, i, entries, output, q, selected, nonzero)) {
+            if (!scalarCandidate<RetainCollisions>(data, plan[s].stride, s, i, entries, output, q, selected, nonzero)) {
                 return -1;
             }
         }
@@ -320,7 +325,8 @@ const char* kernelName(Kernel kernel) {
     }
 }
 
-std::int64_t batch(Kernel kernel, const Section* plan, int sectionCount, int entries,
+template<bool RetainCollisions>
+static std::int64_t batchWithOutput(Kernel kernel, const Section* plan, int sectionCount, int entries,
         std::int64_t* output, const Query& q) {
     if (!std::isfinite(q.x) || !std::isfinite(q.z)) {
         return -1;
@@ -328,7 +334,7 @@ std::int64_t batch(Kernel kernel, const Section* plan, int sectionCount, int ent
 
     for (double bound : q.bounds) {
         if (!std::isfinite(bound)) {
-            return scalarBatch(plan, sectionCount, entries, output, q);
+            return scalarBatch<RetainCollisions>(plan, sectionCount, entries, output, q);
         }
     }
 
@@ -345,23 +351,30 @@ std::int64_t batch(Kernel kernel, const Section* plan, int sectionCount, int ent
 #ifdef AR_X86_SIMD
     switch (kernel) {
         case Kernel::SSE2:
-            return sse2Batch<false>(plan, sectionCount, entries, output, q);
+            return sse2Batch<false, RetainCollisions>(plan, sectionCount, entries, output, q);
         case Kernel::AVX2:
-            return avx2Batch<false>(plan, sectionCount, entries, output, q);
+            return avx2Batch<false, RetainCollisions>(plan, sectionCount, entries, output, q);
         case Kernel::AVX512:
-            return avx512Batch<false>(plan, sectionCount, entries, output, q);
+            return avx512Batch<false, RetainCollisions>(plan, sectionCount, entries, output, q);
         case Kernel::QuantizedSSE2:
-            return sse2Batch<true>(plan, sectionCount, entries, output, q);
+            return sse2Batch<true, RetainCollisions>(plan, sectionCount, entries, output, q);
         case Kernel::QuantizedAVX2:
-            return avx2Batch<true>(plan, sectionCount, entries, output, q);
+            return avx2Batch<true, RetainCollisions>(plan, sectionCount, entries, output, q);
         case Kernel::QuantizedAVX512:
-            return avx512Batch<true>(plan, sectionCount, entries, output, q);
+            return avx512Batch<true, RetainCollisions>(plan, sectionCount, entries, output, q);
         default:
             break;
     }
 #endif
 
-    return scalarBatch(plan, sectionCount, entries, output, q);
+    return scalarBatch<RetainCollisions>(plan, sectionCount, entries, output, q);
+}
+
+std::int64_t batch(Kernel kernel, const Section* sections, int sectionCount, int entries,
+        std::int64_t* output, const Query& query) {
+    return query.retainCollisions
+            ? batchWithOutput<true>(kernel, sections, sectionCount, entries, output, query)
+            : batchWithOutput<false>(kernel, sections, sectionCount, entries, output, query);
 }
 
 }
