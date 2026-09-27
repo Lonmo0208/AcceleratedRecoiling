@@ -115,7 +115,7 @@ jobs:
           #     the same command list as the build, not on the following line.
           set +e
           set -o pipefail
-          cmd //c "gradlew.bat clean jar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace" 2>&1 | tee /tmp/ar-build.log
+          cmd //c "gradlew.bat clean remapJar -Pmod_version=${{ steps.version.outputs.version }} -Porg.gradle.jvmargs=-Xmx4G --no-daemon --stacktrace" 2>&1 | tee /tmp/ar-build.log
           status=$?
           echo "gradle exit status: $status"
           exit "$status"

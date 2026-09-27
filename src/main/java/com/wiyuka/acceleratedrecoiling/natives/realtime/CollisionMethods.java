@@ -1,6 +1,7 @@
 package com.wiyuka.acceleratedrecoiling.natives.realtime;
 
 import com.wiyuka.acceleratedrecoiling.AcceleratedRecoiling;
+import com.wiyuka.acceleratedrecoiling.mixin.LivingEntityDoPushInvoker;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,7 +14,9 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
+import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.transformer.ClassInfo;
+import org.spongepowered.asm.util.Annotations;
 
 final class CollisionMethods {
     private static final Map<String, List<MethodInsnNode>> REFERENCES = loadReferences();
@@ -77,14 +80,8 @@ final class CollisionMethods {
     }
 
     private static Map<String, List<MethodInsnNode>> loadReferences() {
-        String resource = "/" + Type.getInternalName(CollisionMethods.class) + ".class";
-        try (var input = CollisionMethods.class.getResourceAsStream(resource)) {
-            if (input == null) {
-                throw new IOException("Missing collision method references: " + resource);
-            }
-
-            var type = new ClassNode();
-            new ClassReader(input).accept(type, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        try {
+            var type = readClass(CollisionMethods.class);
             var references = new HashMap<String, List<MethodInsnNode>>();
 
             for (var method : type.methods) {
@@ -99,8 +96,7 @@ final class CollisionMethods {
                     }
                 }
                 if (method.name.equals("pushable")) {
-                    calls.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, Type.getInternalName(LivingEntity.class),
-                            "doPush", Type.getMethodDescriptor(Type.VOID_TYPE, Type.getType(Entity.class)), false));
+                    calls.add(doPushReference());
                 }
                 references.put(method.name, List.copyOf(calls));
             }
@@ -110,6 +106,38 @@ final class CollisionMethods {
             AcceleratedRecoiling.LOGGER.warn("Could not read collision method references; using vanilla collisions", e);
             return Map.of();
         }
+    }
+
+    private static ClassNode readClass(Class<?> type) throws IOException {
+        String resource = "/" + Type.getInternalName(type) + ".class";
+        try (var input = type.getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new IOException("Missing collision method references: " + resource);
+            }
+
+            var node = new ClassNode();
+            new ClassReader(input).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            return node;
+        }
+    }
+
+    private static MethodInsnNode doPushReference() throws IOException {
+        var invoker = readClass(LivingEntityDoPushInvoker.class);
+        for (var method : invoker.methods) {
+            if (!method.name.equals("ar$doPush")) {
+                continue;
+            }
+
+            String target = Annotations.getValue(Annotations.getVisible(method, Invoker.class));
+            if (target == null || target.isEmpty()) {
+                break;
+            }
+
+            return new MethodInsnNode(Opcodes.INVOKEVIRTUAL, Type.getInternalName(LivingEntity.class),
+                    target, method.desc, false);
+        }
+
+        throw new IOException("Missing doPush invoker target");
     }
 
     private static void pushable(LivingEntity living, Entity entity) {
