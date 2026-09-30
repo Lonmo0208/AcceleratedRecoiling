@@ -1,29 +1,29 @@
-# 加速碰撞 (Accelerated Recoiling)
+# 加速碰撞 (Accelerated Recoiling) — 1.21.1 ECO 合并版
 
 加速碰撞是一个专注于优化服务端实体碰撞逻辑的模组。它利用 FFM (Foreign Function & Memory) API/JNI 接管实体 AABB 碰撞检测，将高密集计算压力转移至 C++ 原生库，从而显著提升服务器性能。
 
-本构建还合并了 **[实体碰撞优化 (Entity Collision Optimizer)](https://github.com/water2004/EntityCollisionOptimizer)**
-的帧引擎内核，**默认档即走这条引擎**：一次扫描所有候选对、一个候选都不丢，推挤在 worker 线程异步计算。
-档位、开关与实测见下方「合并增强」一节。
+> **本分支（`1.21.1/ECO-port`）说明**：这是把 **[实体碰撞优化 (Entity Collision Optimizer)](https://github.com/water2004/EntityCollisionOptimizer)**
+> 的帧引擎内核合并进加速碰撞（NeoForge 1.21.1 / Java 21）的移植分支。**默认档即走 ECO 引擎**：
+> 一次扫描所有候选对、一个候选都不丢，推挤在 worker 线程异步计算。
+> 档位、开关与实测见下方「合并增强：ECO 内核」一节。
 
 **默认档（`AUTO`）不丢推挤、物理量与保真参照贴齐，可以正常使用；但模组整体仍是实验性质，建议做好存档备份。**
 唯一会主动丢推挤的是实验档 `SPARSE`（用超过 `maxCollision` 个对手的部分换速度），它只建议在生电量级的实体堆积下使用。
 
 官方交流群：1023713677
 
-
 ## 特性介绍
 
 *   **实体碰撞性能提升**：把实体推挤（候选枚举 + 逐对判定 + 冲量累加）整段交给原生层或显卡，
     打破 Java 在处理海量实体碰撞时的性能瓶颈。
-*   **算法优化**：**一次扫描所有候选对**，取代原版「每个实体各查一次邻域」的写法——
-    后者在数千实体时是主要开销（原版等价内核 `PARITY` 实测 93~107 ms，引擎档 20.9 ms）。
+*   **一次扫描所有候选对**：取代原版「每个实体各查一次邻域」的写法——后者在数千实体时是主要开销
+    （原版等价内核 `PARITY` 实测 90~107 ms，引擎档 21~24 ms）。
 *   **默认档保真**：默认的 `AUTO` 档一个候选都不丢，配对集合与逐对算式对齐原版推挤；
     想逐字复刻原版用 `PARITY`，想拿速度换保真用实验档 `SPARSE`。详见「合并增强」一节。
 *   **异步推挤**：推挤在 worker 线程算，服务器线程只在 tick 末尾取结果，那约 4 ms 不再占 tick 时间。
     提供 `asyncPush` 开关一键回到同步路径（兼容性排查用）。
 *   **双端原生支持**：内建 Windows (`.dll`) 与 Linux (`.so`) 的动态链接库，面板服、VPS 还是 Docker 容器，都能一键部署。
-*   **动态后端选择机制**：
+*   **多后端**：
     * FFM  （使用FFM API与C++层进行通信 **该后端需要CPU支持AVX2指令集**）
     * JNI  （使用JNI与C++层进行通信 **该后端需要CPU支持AVX2指令集**）
     * Java （使用加速碰撞的Java原生算法 **注：MacOS系统将被fallback到此后端**）
@@ -31,7 +31,7 @@
 
 ## 环境要求与前置
 
-*   **Java 17 或以上**：必须使用 Java 17 或 Java 17+ 启动游戏/服务端。
+*   **Java 21**：本分支使用 FFM 预览 API（`--enable-preview`），必须用 Java 21 启动（1.21.1 本身也要求 Java 21）。
 *   **64位操作系统**：本机库 (`.dll` / `.so`) 仅支持 64 位环境。
 *   **Windows 平台**：需安装 [Microsoft Visual C++ 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe)（如启动失败请优先安装）。
 *   **Leaves 端**：启动参数中必须包含 `-Dleavesclip.enable.mixin=true`。
@@ -55,7 +55,7 @@
    "maxThreads": 1,
    "enableEntityGetterOptimization": false, // 实体查询走原生空间索引（实测更慢，默认关）
    "tickProfiling": true,                   // tick 耗时拆解埋点，/check 与 abtest 的读数靠它
-   "enableMovementTakeover": true,           // 方块侧移动求解接管
+   "enableMovementTakeover": true,          // 方块侧移动求解接管
    "debugMovementParity": false,
    "debugQueryParity": false,
    "debugPushParity": false,                // GPU 推挤与 CPU 原生的逐位对拍
@@ -68,9 +68,9 @@
 
 **Q: 为什么游戏崩溃或无法启动？** <br>
 **A:** 请按以下步骤排查：
-1. 确认已正确安装 Java 17+
-3. 若使用 **Leaves** 服务端，确保启动参数包含 `-Dleavesclip.enable.mixin=true`。
-4. 如果更新过模组，尝试删除根目录或 `.minecraft` 下的 `acceleratedRecoilingLib.dll`与`acceleratedRecoiling.json`，然后重启游戏让其重新生成。
+1. 确认已正确安装 Java 21（本分支必须 21，且带 `--enable-preview` 的 jar 不能跑在其它版本上）。
+2. 若使用 **Leaves** 服务端，确保启动参数包含 `-Dleavesclip.enable.mixin=true`。
+3. 如果更新过模组，尝试删除根目录或 `.minecraft` 下的 `acceleratedRecoilingLib.dll` 与 `acceleratedRecoiling.json`，然后重启游戏让其重新生成。
 
 **Q: 开启后实体挤压表现和原版一样吗？** <br>
 **A:** 分档而言。**默认档（`AUTO`/`NATIVE`）不丢任何推挤**，配对集合与逐对算式都对齐原版推挤，
@@ -90,7 +90,7 @@
    说明问题在原生/引擎那条路上，把它连同 `/check` 的输出一起反馈即可。
 
 **Q: 为什么开启模组后，服务器性能反而下降了？** <br>
-**A:** 可能是周围实体密度未达到触发优化的条件，因此同时走了原版和加速碰撞的两条路径。请尝试打开配置文件，适当调低 `densityThreshold` 的数值。或尝试调低`maxThreads`。
+**A:** 可能是周围实体密度未达到触发优化的条件，因此同时走了原版和加速碰撞的两条路径。请尝试打开配置文件，适当调低 `densityThreshold` 的数值。或尝试调低 `maxThreads`。
 
 **Q: 在 Docker 中运行服务端时，报错提示找不到 `libgomp.so` 怎么办？** <br>
 **A:** Docker 中使用的 Ubuntu 镜像不包含 `libgomp.so`，因此只需在构建镜像的 Dockerfile 中添加以下命令并重新构建镜像即可：
@@ -99,16 +99,27 @@ RUN apt-get update && \
     apt-get install -y libgomp1
 ```
 
-**Q: FFM 是Java 21的预览功能，我是否应该使用Java 21+启动游戏？** <br>
-**A:** 如果你的游戏版本是*1.21.1*以上，那么是的，但这是**1.21.1**版本本身需要**Java 21**来运行。 <br>
-如果你的游戏是*1.20.1*，那么不需要，加速碰撞*v0.10.0-alpha-1.20.1*以上的版本**同时支持最新版JDK到Java 17**之间的任意JDK版本。 <br> （* 注: 1.20.1 的最低可运行 Java 即为 Java 17 *）
+## 性能实测
 
-## 性能基准测试
+### 合并 ECO 内核后的读数（本分支）
+
+**测试环境**：Ryzen APU（核显 gfx1101）| 2088 实体密集场景 | NeoForge 1.21.1 | GraalVM JDK 21。
+全部读数来自 `abtest` **交替对照**（每段 100~200 tick，切换与统计全由程序做，场景漂移被均摊），
+同一场景、同一批实体，可直接横向比较：
+
+| 档 | tick（稳态） | 是否丢推挤 |
+| :--- | :--- | :--- |
+| `SPARSE`（实验） | **18.5 ms** | 丢超过上限的推挤 |
+| **`AUTO` / `NATIVE`（默认）** | **21~24 ms** | 否 |
+| `AUTO` + `asyncPush=false` | 26~28 ms | 否（逐实体发布，结构更贴原版） |
+| `GPU`（AR 候选枚举，对照档） | ~26 ms | 是 |
+| `PARITY`（原版等价参照） | 90~107 ms | 否 |
+
+引擎档的 `move + collide` 为 23.4 ms，对 `PARITY` 的 22.1 ms（**代价已与保真参照贴平**，差 6%）。
+
+### 原加速碰撞的历史数据（合并前，保留作参考）
 
 **测试环境:** i5-12600KF | 32GB RAM | RTX 3060 Ti | Leaves 1.21.8 | GraalVM JDK 21
-
-> 以下两组是**原加速碰撞**的实测数据（合并 ECO 内核之前的版本），保留作参考。
-> 合并后的构建的真实读数见下方「合并增强」一节——那一节的数字是同一场景交替对照测出来的。
 
 **测试一：TPS 变化 (同一区块 2x2 空间内生成实体)**
 | 实体数量 | Leaves + 加速碰撞 | 原版 Leaves | 提升倍率 |
@@ -118,55 +129,33 @@ RUN apt-get update && \
 | **16,384** | **8.6 TPS** (115 MSPT) | - | - |
 | **32,768** | **4.3 TPS** (230 MSPT) | - | - |
 
-**测试二：BroadPhase 耗时 (纯 C++ 端处理性能)**
-| 实体数量 | MS / Frame (每帧耗时) | 等效 FPS |
-| :--- | :--- | :--- |
-| 10,000 | 0.2 ms | 5000 |
-| 50,000 | 1.1 ms | 909 |
-| 100,000 | 2.5 ms | 400 |
-| 400,000 | 21.3 ms | 46 |
-
 ## 开发计划 (TODO)
-*   兼容 MacOS 
+
+*   兼容 MacOS
 *   Luminol 支持
-*   **把「引擎与原版最终速度逐位等价」证掉**：目前只证到配对集合与逐对算式，见下方「合并增强」里的说明。
+*   **把「引擎与原版最终速度逐位等价」证掉**：目前只证到配对集合与逐对算式，见「合并增强」里的说明。
 *   **定因「群体平均速度比原版高 2.8 倍」**：代价已贴平、不影响帧时间，但它是真实的行为差异。
-    **已排除「发布时刻」**（逐实体落盘的实验否掉了，见下方「合并增强」）与「候选集规模」；
-    剩下指向**候选受理集合与冲量累加**。要先做出能单变量隔离的实验，
-    **不要先改代码再解释**（这类推测性改动试过一次，反而更慢，已回滚）。
+    已排除「发布时刻」与「候选集规模」两条嫌疑，剩下指向**候选受理集合与冲量累加**。
+    要先做出能单变量隔离的实验，**不要先改代码再解释**（这类推测性改动试过一次，反而更慢，已回滚）。
 *   收窄 `GPU` 档（AR 候选枚举）的漏配：它是唯一还能被优化的对照档。
 
 ## 源码编译
 
-**本构建**用一条 `tools/build_all.ps1` 跑完「原生双端 → Java → 打包 → 启动预检 → 部署」，
-细节与可选开关见下方「合并增强」里的**构建（含原生库）**一节；那里也说明了为什么
+**本分支**用一条 `tools/build_all.ps1` 跑完全流程（原生双端 → Java → 打包 → 启动预检 → 部署），
+详细说明与可选开关见下方「合并增强：ECO 内核」里的**构建**一节；那里也说明了为什么
 **不要直接用 `gradlew jar`**（mixin 注入签名错误只在类加载时才抛，编译期发现不了）。
 
-**原加速碰撞**的做法（仅作历史参考）：通过 Gradle 调用 MSVC 和 WSL 双端交叉编译，
-建议在装有 WSL 的 Windows 10/11 环境下操作。
-
-**1. 环境准备**
-*   安装 JDK 21。(必须)
-*   安装 Visual Studio 2022，勾选“使用 C++ 的桌面开发”。
-*   在 WSL 中安装编译工具：`sudo apt update && sudo apt install build-essential libgomp1 -y`
-
-**2. 修改脚本路径**
-打开 `build.gradle.kts`，找到 `compileNativeLib` 任务，将 `vcvarsScript` 变量的值替换为你本机实际的 `vcvars64.bat` 路径。
-
-**3. 构建**
-在项目根目录运行以下命令：
-```bash
-gradlew jar
-gradlew build
-```
-编译产物 (包含双端动态库的 Jar) 将生成在 `build/libs/` 目录下。
+> 提示：仓库里已包含预编译好的原生库（`AcceleratedRecoiling-third-party/out/`），
+> 只想打 jar 的话克隆后直接 `gradlew build` 即可，无需安装 MSVC/zig；
+> 需要重新编译原生库时再用 `tools/build_all.ps1`。
 
 ## 支持与赞助
+
 如果你喜欢 **加速碰撞 (Accelerated Recoiling)**，欢迎来 **[这里](https://github.com/wiyuka0/AcceleratedRecoiling/blob/master/3ae91be2c6a1e7447635b7b1b7454ffc.jpeg)** 请砂糖吃一顿带鱼哦 owo
 
 ## 合并增强：实体碰撞优化 (ECO) 内核
 
-本构建把 **[实体碰撞优化 (Entity Collision Optimizer)](https://github.com/water2004/EntityCollisionOptimizer)**
+本分支把 **[实体碰撞优化 (Entity Collision Optimizer)](https://github.com/water2004/EntityCollisionOptimizer)**
 的核心内核合并了进来：保留原加速碰撞的全部功能之外，新增一条「一次扫描所有候选对」的帧引擎。
 合并后**默认档就是这条引擎**，而且它一个候选都不丢。
 
@@ -237,35 +226,20 @@ gradlew build
 | `ENGINE_GPU` / `ENGINE_CPU` | 同一个引擎、只差推挤算力在显卡还是 CPU |
 | `ENGINE_ASYNC` / `ENGINE_SYNC` | 同一个引擎、只差推挤的**发布时刻**（末尾批量 / 逐实体） |
 
-### 实测（2088 实体、交替对照、稳态）
-
-| 档 | tick | 说明 |
-| :--- | :--- | :--- |
-| `SPARSE` | **18.5 ms** | 丢超过上限的推挤 |
-| **`AUTO` / `NATIVE`** | **20.9 ~ 23.8 ms** | 一个不漏（区间是不同轮次之间的读数波动，同场景跨轮约 ±2 ms） |
-| `GPU`（AR 候选枚举） | ~25.8 ms | 漏推 |
-| `PARITY`（原版等价参照） | 90~107 ms | 纯 Java，保真 |
-| `AUTO` + `asyncPush=false` | 26.4 ~ 28.5 ms | 同上，但改成逐实体落盘（结构更贴原版，代价 +1.8 ms） |
-
-同一场景对比引擎的物理量：`move + collide` 23.4 ms 对 `PARITY` 的 22.1 ms（**代价已与保真参照贴平**，
-只差 6%），而合并初期这个数字是 52.2 ms。**但行为上仍有一处未闭合的差异：全场平均速度引擎是
-1.1~1.2 m/tick、原版是 0.45~0.48，约 2.8 倍**，成因未定（已排除发布时刻与候选集规模两条嫌疑），
-详见上面的说明。
-
 ### 内核为什么需要异步、默认为什么是引擎
 
 合并过程中查出过一个关键 bug：推挤的速度回写原本放在 tick 末尾，但写入值是在帧首算好的
 `帧首速度 + 冲量`，**把实体自己 tick 里算出的摩擦与重力衰减整份覆盖掉了**——冲量因此每帧叠加、
 永不衰减，畜群速度一路涨到 3~6 m/tick（原版安静态是 0.41），`move/collide` 因此贵出 2~4 倍。
-改成「存冲量、tick 末现读现加」之后 `move + collide` 从 52.2 落到 25.2。
+改成「存冲量、落到实体时现读现加」之后 `move + collide` 从 52.2 落到 23.4。
 
 `AUTO` 一度走的是 `GPU` 那条候选枚举（当时引擎要 45.8 ms、比它慢 20 ms），修好这个 bug 并
 改成异步之后结论反过来：引擎又快又不漏，所以默认档换成了引擎。**整段过程中默认档从 45.8 ms
-降到 20.9 ms，而它现在是保真的那个。**
+降到 21~24 ms，而它现在是保真的那个。**
 
-### 构建（含原生库）
+### 构建
 
-本构建用 `tools/build_all.ps1` 一条命令跑完全流程（原生双端 → Java → 打包 → 启动预检 → 部署）：
+本分支用 `tools/build_all.ps1` 一条命令跑完全流程（原生双端 → Java → 打包 → 启动预检 → 部署）：
 
 ```powershell
 & .\tools\build_all.ps1                 # 全流程，含启动预检
@@ -274,10 +248,11 @@ gradlew build
 & .\tools\build_all.ps1 -NoDeploy       # 只产出不部署
 ```
 
-* 需要 JDK 21（默认取 `C:\Program Files\Java\Graalvm-JDK-21`）、MSVC（`vcvars64.bat`）与
-  zig（交叉编译 Linux `.so`）。路径都在脚本顶部集中配置。
+* 原生编译需要 JDK 21、MSVC（`vcvars64.bat`）与 zig（交叉编译 Linux `.so`），路径在脚本顶部集中配置。
 * **不要直接用 `gradlew jar`**：mixin 的注入签名错误只在类被加载、注入被施加的那一刻抛出，
   编译器与打包脚本都发现不了。脚本里的**启动预检**会真起一次服务端把这类问题挡在部署之前。
+* 只想打 jar（不重编原生）：仓库里已带预编译 natives（`AcceleratedRecoiling-third-party/out/`），
+  克隆后直接 `gradlew build` 即可。
 * 产物：`dist/acceleratedrecoiling-EcoUpAdd-21.1.13-dev.jar`，内含
   `natives/windows-x64/AcceleratedRecoiling.dll` 与 `natives/linux-x64/AcceleratedRecoiling.so`，
   以及打包进去的 jocl（GPU 后端依赖）。
@@ -288,9 +263,22 @@ gradlew build
 
 本项目基于 **MIT 协议** 开源。
 
-合并进来的 **实体碰撞优化 (ECO)** 内核来自其父仓库：
-**[water2004/EntityCollisionOptimizer](https://github.com/water2004/EntityCollisionOptimizer)** ——
-「一次扫描所有候选对」的帧引擎、原生全量推挤、以及 `PARITY` 那条原版等价内核都源自这里。
+### Entity Collision Optimizer (ECO)
+
+本模组的实体碰撞内核合并自 **[EntityCollisionOptimizer](https://github.com/water2004/EntityCollisionOptimizer)**（MIT 协议），
+在此向 ECO 项目及其作者表示特别感谢——本构建的核心能力直接来自该项目：
+
+*   **[water2004](https://github.com/water2004)** — ECO 仓库维护者。
+    合并进来的内容包括：「一次扫描所有候选对」的帧引擎与原生全量推挤（`eco-native/` 的主体）、
+    `PARITY` 原版等价内核，以及多次经实测验证的关键修复（可推实体查询盒对齐原版、
+    段内顺序在构建时定型、静默失败留痕等）。
+*   **[wiyuka-owo](https://github.com/wiyuka-owo)** — ECO 的主要开发者（270+ 次提交），
+    上述内核与修复的绝大部分代码出自其手。
+
+没有 ECO 就没有这个合并分支。如需原版 Fabric 版本（MC 26.2+、Java 25），
+请直接使用上游仓库，它的更新比本分支活跃得多。
+
+### Accelerated Recoiling
 
 特别感谢以下开发者对本项目的核心思路与代码移植提供的巨大帮助：
 *   **[Argon4W](https://github.com/Argon4W)**: 原始构思与核心思路。
