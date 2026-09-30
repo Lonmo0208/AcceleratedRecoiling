@@ -105,5 +105,36 @@ public final class SectionQueryProbe {
                     ? "OK：换位后 bounds 跟着实体走（只查回 id=4）"
                     : "不一致：期望只查回 id=4");
         }
+
+        // 实体被挪走之后，段里存的那份 bounds 必须跟着刷新（updateEntityBounds 会写段槽位）。
+        // 不刷新的话整箱查询会拿它的旧位置去比，新位置永远查不到——不崩，但结果是错的。
+        MethodHandle update = linker.downcallHandle(
+                lookup.find("updateCollisionEntity").orElseThrow(),
+                FunctionDescriptor.of(INT, ValueLayout.ADDRESS, INT, ValueLayout.ADDRESS,
+                        INT, INT, INT, INT, INT, INT, INT, INT, INT, INT, ValueLayout.JAVA_LONG));
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment moved = arena.allocate(6L * Double.BYTES, Double.BYTES);
+            double[] box = {10.0, 0.0, 0.0, 10.8, 1.8, 0.8};
+            for (int i = 0; i < box.length; i++) {
+                moved.set(DOUBLE, (long) i * Double.BYTES, box[i]);
+            }
+            // 仍在段 (0,0,0) 内（16 格一段）：这样段成员关系不变，查到与否只取决于
+            // 段里缓存的 bounds 有没有跟着这次移动刷新。
+            int status = (int) update.invokeExact(context, 2, moved,
+                    1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0L);
+            System.out.println("updateCollisionEntity(2 -> x=10) -> " + status);
+
+            MemorySegment out = arena.allocate((long) count * Integer.BYTES, Integer.BYTES);
+            int returned = (int) query.invokeExact(context,
+                    9.9, -0.5, -0.5, 10.9, 2.0, 1.3,
+                    out, count);
+            System.out.println("移动后查询 x=10.0 那一格 -> " + returned);
+            for (int i = 0; i < Math.max(returned, 0); i++) {
+                System.out.println("  hit id=" + out.get(INT, (long) i * Integer.BYTES));
+            }
+            System.out.println(returned == 1 && out.get(INT, 0L) == 2
+                    ? "OK：段里存的 bounds 已随实体刷新"
+                    : "不一致：期望只查回 id=2");
+        }
     }
 }
