@@ -14,6 +14,11 @@ struct CellBoundsSoa {
     std::vector<double> minX, minY, minZ;
     std::vector<double> maxX, maxY, maxZ;
 
+    // 六条向量的长度必须一致；size() 用于在读写前确认下标没有越过这一列。
+    std::size_t size() const noexcept {
+        return minX.size();
+    }
+
     void push(const Aabb& box) {
         minX.push_back(box.minX);
         minY.push_back(box.minY);

@@ -214,8 +214,12 @@ int queryEntitiesInBox(
             );
             if (members == nullptr) return true;
 #if ECO_VANILLA_ORDER
+            // 批量分支只在 bounds 与 ids 重叠的那一段上跑：两条向量一旦不同长（段索引不变量
+            // 被破坏），按 ids 的下标读 bounds 就是越界读，而空 vector 的 data 是 nullptr——
+            // 那会直接打崩 JVM。退到逐元素分支结果仍然正确，因为那边读的是 context.boxes。
+            const std::size_t batchable = std::min(members->ids.size(), members->bounds.size());
             std::size_t index = 0;
-            for (; index + 4 <= members->ids.size(); index += 4) {
+            for (; index + 4 <= batchable; index += 4) {
                 unsigned hits = eco::intersectCellBounds4(scan, members->bounds, index);
                 while (hits != 0) {
                     const unsigned lane = std::countr_zero(hits);

@@ -291,7 +291,10 @@ void updateEntityBounds(CollisionContext& context, int entityId, const Aabb& box
 #if ECO_VANILLA_ORDER
     if (static_cast<std::size_t>(entityId) < context.sectionSlots.size()) {
         const CellSlot sectionSlot = context.sectionSlots[entityId];
-        if (sectionSlot.members != nullptr) {
+        // 下标越过 bounds 说明段成员表两条向量已经不同步。宁可不更新这一格（查询侧还有
+        // Java 那次精确相交复核兜着），也不能按越界下标写内存——那是堆破坏，比崩溃更难查。
+        if (sectionSlot.members != nullptr
+                && sectionSlot.index < sectionSlot.members->bounds.size()) {
             sectionSlot.members->bounds.set(sectionSlot.index, box);
         }
     }

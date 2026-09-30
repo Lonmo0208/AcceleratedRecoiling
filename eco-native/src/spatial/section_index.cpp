@@ -41,6 +41,12 @@ void insertSectionEntity(CollisionContext& context, int entityId) {
     CellMembers*& entry = context.sections.entry(section);
     if (entry == nullptr) entry = &context.acquireSectionMembers();
     entry->ids.push_back(entityId);
+#if ECO_VANILLA_ORDER
+    // bounds 必须与 ids 同长同序：整箱查询是按槽位下标做 4 路 SIMD 比较，直接读 bounds。
+    // 漏了这一句的后果是段里凑够 4 个实体就走进批量分支，读一段从未分配过的内存
+    // （空 vector 的 data 是 nullptr）——JVM 级 SIGSEGV，2026-09-30 服务端就是这样崩的。
+    entry->bounds.push(context.boxes[entityId]);
+#endif
     context.sectionSlots[entityId] = {entry, entry->ids.size() - 1};
 }
 
@@ -50,13 +56,20 @@ void removeSectionEntity(CollisionContext& context, int entityId) {
     if (slot.members == nullptr || slot.index >= slot.members->ids.size()) return;
 
     CellMembers& members = *slot.members;
+    const std::size_t last = members.ids.size() - 1;
     const int movedId = members.ids.back();
-    const bool movedMember = slot.index != members.ids.size() - 1;
-    if (movedMember) {
+    if (slot.index != last) {
         members.ids[slot.index] = movedId;
+#if ECO_VANILLA_ORDER
+        // 尾部元素被换到 slot.index，bounds 也要跟着换，否则下标与实体就对不上了。
+        members.bounds.swap(slot.index, last);
+#endif
         context.sectionSlots[movedId].index = slot.index;
     }
     members.ids.pop_back();
+#if ECO_VANILLA_ORDER
+    members.bounds.popBack();
+#endif
     context.sectionSlots[entityId] = {nullptr, 0};
     if (members.ids.empty()) {
         context.sections.erase(sectionOf(context.metadata[entityId]));
