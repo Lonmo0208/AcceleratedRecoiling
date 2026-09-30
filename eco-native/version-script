@@ -1,0 +1,31 @@
+{
+    global:
+        putCollisionEntity;
+        removeCollisionEntity;
+        updateCollisionLocation;
+        scanCollisionBlocks;
+        createCollisionContext;
+        destroyCollisionContext;
+        setCollisionGridSize;
+        beginCollisionFrame;
+        addCollisionEntity;
+        updateCollisionEntity;
+        invalidateEntityPushabilityCache;
+        invalidatePushEligibilityFields;
+        queryCollisionEntities;
+        queryHardCollisionEntities;
+        queryEntitiesInBox;
+        queryPushableEntities;
+        executePushRun;
+        executeFullPushRun;
+        solveMovement;
+        prepareMovement;
+        createCtx;
+        destroyCtx;
+        createCfg;
+        updateCfg;
+        destroyCfg;
+        push;
+        Java_com_wiyuka_*;
+    local: *;
+};

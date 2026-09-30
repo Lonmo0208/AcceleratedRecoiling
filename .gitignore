@@ -4,3 +4,9 @@
 /build/classes/java/main/
 /run/
 /.idea/
+# 构建产物与运行目录
+dist/
+run-client/
+out/
+jdk/
+*.log

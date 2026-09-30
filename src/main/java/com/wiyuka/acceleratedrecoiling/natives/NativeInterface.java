@@ -1,192 +1,225 @@
 package com.wiyuka.acceleratedrecoiling.natives;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.wiyuka.acceleratedrecoiling.AcceleratedRecoiling;
-import com.wiyuka.acceleratedrecoiling.config.FoldConfig;
-import org.slf4j.Logger;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.foreign.Arena;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-
-import static java.lang.foreign.ValueLayout.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 public class NativeInterface {
-    private static java.lang.foreign.SegmentAllocator allocator;
-    private static java.lang.foreign.Linker linker;
-    private static java.lang.foreign.Arena nativeArena;
-    private static java.lang.invoke.MethodHandle pushMethodHandle = null;
-    private static long maxSizeTouched = -1;
+
+    public static boolean isVectorApiAvailable() {
+        try {
+            Class.forName("jdk.incubator.vector.Vector");
+            return true;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    public static String getPlatformNativePath() {
+        String osName = System.getProperty("os.name").toLowerCase();
+        String osArch = System.getProperty("os.arch").toLowerCase();
+        String os;
+        if (osName.contains("win")) {
+            os = "windows";
+        } else if (osName.contains("mac")) {
+            os = "macos";
+        } else if (osName.contains("nix") || osName.contains("nux") || osName.contains("aix")) {
+            os = "linux";
+        } else {
+            throw new UnsupportedOperationException("Unsupported OS: " + osName);
+        }
+        String arch;
+        if (osArch.contains("amd64") || osArch.contains("x86_64")) {
+            arch = "x64";
+        }
+        else if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            arch = "arm64";
+        } else {
+            throw new UnsupportedOperationException("Unsupported architecture: " + osArch);
+        }
+        return "/natives/" + os + "-" + arch + "/";
+    }
+
+    public enum BackendType {
+        FFM("FFM", () -> loadReflectively("com.wiyuka.acceleratedrecoiling.natives.FFMBackend")),
+        JNI("JNI", JNIBackend::new), // 假设 JNI 类兼容所有 JDK
+        JAVA_SIMD("Java SIMD", () -> {
+            if (!isVectorApiAvailable()) throw new UnsupportedOperationException("Vector API not available");
+            return loadReflectively("com.wiyuka.acceleratedrecoiling.natives.JavaSIMDBackend");
+        }),
+        JAVA_VANILLA("Java Vanilla", JavaVanillaBackend::new),
+        JAVA("Pure Java", JavaBackend::new),
+        GPU("GPU", GPUBackend::new),
+        AUTO("Auto", null);
+
+        private final String displayName;
+        private final Supplier<INativeBackend> loader;
+
+        BackendType(String displayName, Supplier<INativeBackend> loader) {
+            this.displayName = displayName;
+            this.loader = loader;
+        }
+
+        public String getDisplayName() { return displayName; }
+
+        public INativeBackend tryLoad() {
+            if (this == AUTO) return null;
+            try {
+                AcceleratedRecoiling.LOGGER.info("Attempting to load {} backend...", this.displayName);
+                INativeBackend instance = loader.get();
+                instance.initialize();
+                return instance;
+            } catch (Throwable t) {
+                AcceleratedRecoiling.LOGGER.warn("{} backend failed to load. Reason: {}", this.displayName, t.getMessage());
+                return null;
+            }
+        }
+    }
+
+    private static INativeBackend backend;
+    private static boolean isInitialized = false;
+
+    private static final List<BackendType> AUTO_FALLBACK_CHAIN = Arrays.asList(
+            BackendType.GPU,
+            BackendType.FFM,
+            BackendType.JNI,
+            BackendType.JAVA_SIMD,
+            BackendType.JAVA
+    );
+
+    public static void initialize() {
+        // 1. 读取 JVM 启动参数，例如: -Dacceleratedrecoiling.backend=FFM
+        String backendProp = System.getProperty("acceleratedrecoiling.backend");
+        BackendType selectedBackend = BackendType.AUTO;
+        // 2. 解析玩家指定的参数
+        if (backendProp != null && !backendProp.trim().isEmpty()) {
+            try {
+                // 将字符串转为大写以匹配 Enum (例如 "ffm" -> "FFM")
+                selectedBackend = BackendType.valueOf(backendProp.trim().toUpperCase());
+                AcceleratedRecoiling.LOGGER.info("User requested backend via JVM argument: {}", selectedBackend.getDisplayName());
+            } catch (IllegalArgumentException e) {
+                AcceleratedRecoiling.LOGGER.warn("Unknown backend '{}' specified in -Dacceleratedrecoiling.backend. Falling back to AUTO.", backendProp);
+            }
+        }
+        // 3. 如果是 AUTO (用户未指定、指定为 AUTO 或指定错误)，执行原有的自动探测逻辑
+        if (selectedBackend == BackendType.AUTO) {
+            if (AVX2.hasAVX2()) {
+                // 这里你可以指定最高性能的后端，比如 FFM 或 JNI
+                selectedBackend = BackendType.FFM;
+            } else if (isVectorApiAvailable()) {
+                selectedBackend = BackendType.JAVA_SIMD;
+            } else {
+                selectedBackend = BackendType.JAVA;
+            }
+            AcceleratedRecoiling.LOGGER.info("Auto-selected backend: {}", selectedBackend.getDisplayName());
+        }
+        // 4. 执行初始化 (假设你有一个接受 BackendType 的 initialize 方法)
+        initialize(selectedBackend);
+    }
+
+    public static void initialize(BackendType preferredType) {
+        if (isInitialized) return;
+
+        AcceleratedRecoiling.LOGGER.info("Initializing NativeInterface with preferred backend: {}", preferredType);
+
+        backend = getBackend(preferredType);
+
+        if (backend != null) {
+            AcceleratedRecoiling.LOGGER.info("Successfully selected and initialized backend: {}", backend.getName());
+            isInitialized = true;
+        } else {
+            throw new IllegalStateException("Failed to initialize ANY backend!");
+        }
+    }
+
+    private static INativeBackend getBackend(BackendType preferredType) {
+        INativeBackend instance = null;
+
+        if (preferredType != BackendType.AUTO) {
+            instance = preferredType.tryLoad();
+            if (instance != null) return instance;
+
+            AcceleratedRecoiling.LOGGER.warn("Preferred {} backend failed. Falling back to AUTO chain...", preferredType.getDisplayName());
+        }
+
+        AcceleratedRecoiling.LOGGER.info("Detected Java Version: {}", Runtime.version().feature());
+
+        for (BackendType type : AUTO_FALLBACK_CHAIN) {
+            if (type == preferredType) continue;
+
+            if (type == BackendType.FFM && Runtime.version().feature() < 21) continue;
+
+            instance = type.tryLoad();
+            if (instance != null) return instance;
+        }
+
+        return null;
+    }
+
+    private static INativeBackend loadReflectively(String className) {
+        try {
+            Class<?> clazz = Class.forName(className);
+            return (INativeBackend) clazz.getDeclaredConstructor().newInstance();
+        } catch (Exception e) {
+            throw new RuntimeException("Reflection load failed for " + className, e);
+        }
+    }
+
+    public static void applyConfig() {
+        if (backend != null) {
+            backend.applyConfig();
+        }
+    }
 
     public static void destroy() {
-        // 1. 使用标志位防止重复调用
-        if (!ParallelAABB.isInitialized) {
-            return;
+        if (backend != null) {
+            backend.destroy();
+            backend = null;
         }
-
-
-        // 2. 立即设置标志位
-        ParallelAABB.isInitialized = false;
-
-        // 4. 关闭为 FFM 分配的 Arena (非常重要)
-        if (nativeArena != null) {
-            // 这将释放为加载库符号而分配的本机内存
-            nativeArena.close();
-        }
-        // 5. 将静态句柄设为 null，帮助 GC 并防止“use-after-close”
-        nativeArena = null;
-        linker = null;
-        pushMethodHandle = null;
+        isInitialized = false;
     }
+
+    public static PushResult push(double[] locations, double[] aabb, int[] resultSizeOut) {
+        if (backend == null) {
+            resultSizeOut[0] = 0;
+            return null;
+        }
+        return backend.push(locations, aabb, resultSizeOut);
+    }
+
     /**
-     * @return Null if the server cannot find the library
+     * 强制切换到指定后端，用于横向对比（例如 GPU 档）。
+     *
+     * <p>注意 {@code initialize(type)} 在该后端加载失败时会退到 AUTO 回退链、可能选中别的后端，
+     * 所以这里**返回是否真的切到了目标后端**：调用方据此决定走哪条对比路径，
+     * 避免出现「以为在用 GPU，其实在用 FFM」这种误判。
      */
-    private static java.lang.foreign.SymbolLookup findFoldLib(java.lang.foreign.Arena arena, String dllPath) {
-        return java.lang.foreign.SymbolLookup.libraryLookup(dllPath, arena);
+    public static synchronized boolean forceBackend(BackendType type) {
+        if (backend != null && type.getDisplayName().equalsIgnoreCase(backend.getName())) {
+            return true;
+        }
+        destroy();
+        initialize(type);
+        return backend != null && type.getDisplayName().equalsIgnoreCase(backend.getName());
     }
 
-    static boolean useCPU = false;
-
-    public static int[] push(
-        double[] locations,
-        double[] aabb,
-        int[] resultSizeOut
-    ){
-        try(java.lang.foreign.Arena tempArena = java.lang.foreign.Arena.ofConfined()) {
-            int count = locations.length / 3;
-            int resultSize = locations.length * FoldConfig.maxCollision;
-            if (count > maxSizeTouched) maxSizeTouched = count;
-
-//            java.lang.foreign.MemorySegment locationsMem = tempArena.allocateFrom(JAVA_DOUBLE, locations);
-//            java.lang.foreign.MemorySegment aabbMem = tempArena.allocateFrom(JAVA_DOUBLE, aabb);
-            java.lang.foreign.MemorySegment locationsMem = tempArena.allocateArray(JAVA_DOUBLE, locations);
-            java.lang.foreign.MemorySegment aabbMem = tempArena.allocateArray(JAVA_DOUBLE, aabb);
-            java.lang.foreign.MemorySegment collisionPairs = tempArena.allocate(JAVA_INT.byteSize() * resultSize * 2);
-
-            int collisionSize = -1;
-            try {
-                collisionSize = (int) pushMethodHandle.invoke(locationsMem, aabbMem, collisionPairs, count, FoldConfig.maxCollision, FoldConfig.gridSize);
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
-
-            resultSizeOut[0] = collisionSize;
-            if (collisionSize == -1) return new int[0];
-
-            return collisionPairs.toArray(JAVA_INT);
-        }
+    /** 当前生效的后端名；没有加载任何后端时为 null。 */
+    public static String activeBackendName() {
+        INativeBackend current = backend;
+        return current == null ? null : current.getName();
     }
-    public static void initialize() {
-//        final Logger logger = Logger.getLogger("Fold");
 
-        Logger logger = AcceleratedRecoiling.LOGGER;
-
-        String dllPath = "";
-
-        String dllName = "acceleratedRecoilingLib";
-
-        String fullDllName = System.mapLibraryName(dllName);
-
-        try (InputStream dllStream = AcceleratedRecoiling.class.getResourceAsStream("/" + fullDllName)) {
-            if (dllStream == null) {
-                throw new java.io.FileNotFoundException("Cannot find " + fullDllName);
-            }
-
-            // 目标路径：JAR 同级目录 ./acceleratedRecoilingLib.dll
-            File targetDll = new File(fullDllName);
-
-            dllPath = targetDll.getAbsolutePath();
-
-                try (java.io.OutputStream out = new java.io.FileOutputStream(targetDll)) {
-                    dllStream.transferTo(out);
-                    logger.info("fullDllName: " + targetDll.getAbsolutePath());
-                }
-
-        } catch (IOException e) {
-            throw new RuntimeException("Load failed: " + e.getMessage(), e);
-        }
-
-        logger.info("DLL: {}", dllPath);
-
-
-        String config = """
-            {
-                "useFold": true,
-                "gridSize": 8,
-                "maxCollision": 32,
-                "gpuIndex": 0,
-                "useCPU": false
-            }
-            """;
-        File foldConfig = new File("acceleratedRecoiling.json");
-        if(!foldConfig.exists()) {
-            // foldConfig.mkdirs();
-            try {
-                foldConfig.createNewFile();
-
-                Files.writeString(foldConfig.toPath(), config);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        try {
-            config = (Files.readString(foldConfig.toPath(), StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            // e.printStackTrace();
-            logger.info("Failed to read acceleratedRecoiling config, reason: " + e.getMessage());
-        }
-
-        JsonObject configJson = JsonParser.parseString(config).getAsJsonObject();
-
-
-        FoldConfig.fold = configJson.get("useFold").getAsBoolean();
-        FoldConfig.gridSize = configJson.get("gridSize").getAsInt();
-        FoldConfig.maxCollision = configJson.get("maxCollision").getAsInt();
-        FoldConfig.gpuIndex = configJson.get("gpuIndex").getAsInt();
-        useCPU = configJson.get("useCPU").getAsBoolean();
-
-
-        logger.info("acceleratedRecoiling initialized");
-        logger.info("Use grid size: {}", FoldConfig.gridSize);
-        logger.info("Use max collisions: {}", FoldConfig.maxCollision);
-        logger.info("Use gpu index: {}", FoldConfig.gpuIndex);
-        logger.info("Use CPU: {}", useCPU);
-
-        linker = java.lang.foreign.Linker.nativeLinker();
-        try {
-            Arena arena = java.lang.foreign.Arena.ofConfined();
-            java.lang.foreign.SymbolLookup lib = findFoldLib(arena, dllPath);
-
-            pushMethodHandle = linker.downcallHandle(
-                    lib.find("push").orElseThrow(),
-                    java.lang.foreign.FunctionDescriptor.of(
-                            java.lang.foreign.ValueLayout.JAVA_INT,   // collisionTimes
-                            java.lang.foreign.ValueLayout.ADDRESS,    // const double* entityLoc
-                            java.lang.foreign.ValueLayout.ADDRESS,    // const double* aabbs
-                            java.lang.foreign.ValueLayout.ADDRESS,    // int* output
-                            java.lang.foreign.ValueLayout.JAVA_INT,   // int count
-                            java.lang.foreign.ValueLayout.JAVA_INT,   // int K
-                            java.lang.foreign.ValueLayout.JAVA_INT    // int gridSize
-                    )
-            );
-
-            java.lang.invoke.MethodHandle initializeMethodHandle = linker.downcallHandle(
-                    lib.find("initialize").orElseThrow(),
-                    java.lang.foreign.FunctionDescriptor.ofVoid(JAVA_INT, JAVA_BOOLEAN)
-            );
-
-            try {
-                initializeMethodHandle.invoke(FoldConfig.gpuIndex, useCPU);
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
-            nativeArena = arena;
-        }catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
+    /**
+     * Returns whether a real native (FFM/JNI) backend is loaded and usable.
+     *
+     * <p>Used by the merged optimizer's AUTO kernel to decide whether to rely on the native
+     * batch-push candidate lists or to fall back to the Java PARITY kernel (vanilla-equivalent).
+     */
+    public static boolean isNativeRuntimeAvailable() {
+        INativeBackend current = backend;
+        return current instanceof FFMBackend || current instanceof JNIBackend;
     }
 }

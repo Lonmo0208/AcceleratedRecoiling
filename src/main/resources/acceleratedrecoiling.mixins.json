@@ -4,8 +4,12 @@
   "package": "com.wiyuka.acceleratedrecoiling.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "EntityGetterMixin",
     "EntityMixin",
+    "EntitySectionMixin",
+    "LevelMixin",
     "LivingEntityMixin",
+    "MinecraftServerMixin",
     "ServerLevelMixin"
   ],
   "client": [
