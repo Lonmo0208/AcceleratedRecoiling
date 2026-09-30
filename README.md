@@ -253,9 +253,12 @@ RUN apt-get update && \
   编译器与打包脚本都发现不了。脚本里的**启动预检**会真起一次服务端把这类问题挡在部署之前。
 * 只想打 jar（不重编原生）：仓库里已带预编译 natives（`AcceleratedRecoiling-third-party/out/`），
   克隆后直接 `gradlew build` 即可。
-* 产物：`dist/acceleratedrecoiling-EcoUpAdd-21.1.13-dev.jar`，内含
+* 产物：`dist/acceleratedrecoiling-EcoUpAdd-21.1.14-eco.jar`，内含
   `natives/windows-x64/AcceleratedRecoiling.dll` 与 `natives/linux-x64/AcceleratedRecoiling.so`，
   以及打包进去的 jocl（GPU 后端依赖）。
+* 版本号在 `gradle.properties` 的 `mod_version`（当前 `21.1.14-eco`）与 `tools/build_all.ps1` 顶部的
+  `$ModVersion` 两处，改的时候要一起改；脚本会在打包时用 gradle 新生成的 `neoforge.mods.toml` 覆盖基准
+  jar 里的旧版本号，并在部署后回读校验「文件名与游戏内显示的版本一致」。
 * 部署时会自动把同 modId 的其它 jar 改名为 `.disabled`（同 modId 共存会直接启动崩溃），
   改完回读确认，有残留就让构建失败。
 

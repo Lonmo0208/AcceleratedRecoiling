@@ -33,7 +33,8 @@ $JarStage    = "C:\Users\Administrator\eco_jar_tmp"
 $Zig         = "C:\Users\Administrator\zig\zig-x86_64-windows-0.16.0\zig.exe"
 $VcVars      = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 $Jdk21       = "C:\Program Files\Java\Graalvm-JDK-21-vm"
-$JarName     = "acceleratedrecoiling-EcoUpAdd-21.1.13-dev.jar"
+$ModVersion  = "21.1.14-eco"
+$JarName     = "acceleratedrecoiling-EcoUpAdd-$ModVersion.jar"
 $ModsDir     = "E:\awa8-21\.minecraft\versions\1.21.1-NeoForge\mods"
 
 $EcoSources = @(
@@ -153,18 +154,31 @@ if ($NativeOnly) {
 Step "3/6 编译 Java (JDK21 预览特性)"
 $env:JAVA_HOME = $Jdk21
 Push-Location $Proj
-$javaOut = & "$Proj\gradlew.bat" compileJava --no-daemon 2>&1
+# processResources 必须一起跑：打包时要用它生成的 neoforge.mods.toml（版本号在那里面展开），
+# 而基准 jar 里那份是上一次构建留下的旧版本号。
+$javaOut = & "$Proj\gradlew.bat" compileJava processResources --no-daemon 2>&1
 $javaCode = $LASTEXITCODE
 Pop-Location
 $javaOut | Out-File -Encoding utf8 "$Proj\build_compile.log"
 if ($javaCode -ne 0) { $javaOut | Select-Object -Last 30 | ForEach-Object { Write-Host "    $_" }; Fail "gradle compileJava 失败" }
 if (-not (Test-Path "$Proj\build\classes\java\main\com\wiyuka\acceleratedrecoiling\engine\EcoFrame.class")) { Fail "找不到编译产物" }
+$genToml = "$Proj\build\resources\main\META-INF\neoforge.mods.toml"
+if (-not (Test-Path $genToml)) { Fail "找不到资源展开后的 neoforge.mods.toml（processResources 没跑？）" }
 Ok "class 输出就绪"
 
 # ---- 4. 打包 ----
 Step "4/6 打包 jar"
-$distJar = "$Proj\dist\$JarName"
-if (-not (Test-Path $distJar)) { Fail "找不到基准 dist jar：$distJar（打包需要它提供已验证的 META-INF 与资源）" }
+# 基准 jar（提供已验证的 META-INF 与资源）与产物分开：产物固定写成本次的版本名，
+# 基准则允许回退——改版本号时按新名字找基准必然落空（旧名字的 jar 还躺在 dist 里），
+# 以前这一条会直接把构建打断，所以找不到就退回 dist 里最新的那个 jar。
+$outJar = "$Proj\dist\$JarName"
+$distJar = $outJar
+if (-not (Test-Path $distJar)) {
+    $cand = @(Get-ChildItem -Path "$Proj\dist" -Filter "*.jar" | Sort-Object LastWriteTime -Descending)
+    if ($cand.Count -eq 0) { Fail "dist 里没有任何基准 jar：$Proj\dist（打包需要它提供已验证的 META-INF 与资源）" }
+    $distJar = $cand[0].FullName
+    Write-Host "  [基线回退] 没有 $JarName，改用 dist\$($cand[0].Name) 当基准" -ForegroundColor Yellow
+}
 $pkg = "$JarStage\pkg"
 if (Test-Path $pkg) { Remove-Item -Recurse -Force $pkg }
 New-Item -ItemType Directory -Force -Path $pkg | Out-Null
@@ -192,6 +206,9 @@ if (Test-Path $joclJar) {
 # mixin 注册表必须以源码为准。基准 jar 里带的是旧版本：只替换 class 而不替换它，
 # 新增的 mixin 会静默不生效——class 明明在 jar 里，注册表里却没有名字。
 Copy-Item -Force "$Proj\src\main\resources\acceleratedrecoiling.mixins.json" "$pkg\acceleratedrecoiling.mixins.json"
+# 版本号同理来自资源展开：基准 jar 里的 neoforge.mods.toml 写的是上一次构建的版本，
+# 只换 class 不换它，就会出现「文件名是新的、游戏里显示旧的」这种对不上的情况。
+Copy-Item -Force $genToml "$pkg\META-INF\neoforge.mods.toml"
 Copy-Item -Force "$Proj\AcceleratedRecoiling-third-party\out\win-x64\AcceleratedRecoiling.dll" "$pkg\natives\windows-x64\"
 Copy-Item -Force "$Proj\AcceleratedRecoiling-third-party\out\linux-x64\AcceleratedRecoiling.so" "$pkg\natives\linux-x64\"
 & "$Jdk21\bin\jar.exe" cfm $rawJar META-INF/MANIFEST.MF .
@@ -202,12 +219,12 @@ if ($jarCode -ne 0) { Fail "jar 打包失败" }
 # 必须 StripPreview：游戏跑 Java 27，预览字节码的小版本号 0xFFFF 会让类加载失败。
 # 数量本身不是不变式（新增一个用预览特性编译的类就会 +1），真正要守的是
 # 「输出 jar 里没有任何 class 还带着 0xFFFF」，所以这里扫一遍产物。
-$stripOut = & "$Jdk21\bin\java.exe" -cp "$Proj\dist\strip" StripPreview $rawJar $distJar 2>&1
+$stripOut = & "$Jdk21\bin\java.exe" -cp "$Proj\dist\strip" StripPreview $rawJar $outJar 2>&1
 Write-Host "    $stripOut"
 if ($stripOut -notmatch "stripped=(\d+)") { Fail "StripPreview 结果无法解析：$stripOut" }
 $strippedCount = [int]$Matches[1]
 if ($strippedCount -lt 8) { Fail "剥离数量异常（预期至少 8）：$stripOut" }
-$zc = [IO.Compression.ZipFile]::OpenRead($distJar)
+$zc = [IO.Compression.ZipFile]::OpenRead($outJar)
 $leftover = 0
 foreach ($e in $zc.Entries) {
     if (-not $e.FullName.EndsWith('.class')) { continue }
@@ -219,7 +236,7 @@ foreach ($e in $zc.Entries) {
 }
 $zc.Dispose()
 if ($leftover -gt 0) { Fail "还有 $leftover 个 class 带预览标记，Java 27 下会类加载失败" }
-Ok "jar 已生成 $((Get-Item $distJar).Length) 字节，stripped=$strippedCount，无残留预览标记"
+Ok "jar 已生成 $((Get-Item $outJar).Length) 字节，stripped=$strippedCount，无残留预览标记"
 
 # ---- 5. 部署 ----
 if ($NoDeploy) {
@@ -260,7 +277,7 @@ if ($NoDeploy) {
     if ($leftover.Count -gt 0) {
         Fail "mods 目录仍有同 modId 的 jar：$($leftover.Name -join ', ')"
     }
-    Copy-Item $distJar "$ModsDir\$JarName" -Force
+    Copy-Item $outJar "$ModsDir\$JarName" -Force
     Ok "已部署 $((Get-Item "$ModsDir\$JarName").Length) 字节"
 
     Step "6/6 校验部署产物"
@@ -272,6 +289,14 @@ if ($NoDeploy) {
         $text = [Text.Encoding]::ASCII.GetString($ms.ToArray())
         if (-not $text.Contains('executeFullPushRun')) { $z.Dispose(); Fail "$entryName 缺 executeFullPushRun" }
     }
+    # 版本一致性：文件名与游戏内显示的版本必须同源，否则又会出现「看着是新 jar、跑的其实是旧的」
+    $tomlEntry = $z.Entries | Where-Object { $_.FullName -eq 'META-INF/neoforge.mods.toml' }
+    if (-not $tomlEntry) { $z.Dispose(); Fail "jar 内缺少 META-INF/neoforge.mods.toml" }
+    $msToml = New-Object IO.MemoryStream; $sToml = $tomlEntry.Open(); $sToml.CopyTo($msToml); $sToml.Close()
+    $tomlText = [Text.Encoding]::UTF8.GetString($msToml.ToArray())
+    if (-not $tomlText.Contains('version = "' + $ModVersion + '"')) {
+        $z.Dispose(); Fail "jar 里写的版本不是 $ModVersion（文件名与游戏内版本对不上）"
+    }
     # 反向校验：jar 里每个 mixin 类都必须在注册表里出现，否则它不会生效而且不会有任何报错
     $jsonEntry = $z.Entries | Where-Object { $_.FullName -eq 'acceleratedrecoiling.mixins.json' }
     if (-not $jsonEntry) { $z.Dispose(); Fail "jar 内缺少 acceleratedrecoiling.mixins.json" }
@@ -281,7 +306,7 @@ if ($NoDeploy) {
     $missing = @($mixinClasses | Where-Object { $registry -notmatch [regex]::Escape('"' + $_ + '"') })
     $z.Dispose()
     if ($missing.Count -gt 0) { Fail "以下 mixin 类没有写进注册表，会被静默忽略：$($missing -join ', ')" }
-    Ok "jar 内 $($mixinClasses.Count) 个 mixin 全部已在注册表中"
+    Ok "jar 版本 $ModVersion 已写入，$($mixinClasses.Count) 个 mixin 全部已在注册表中"
 }
 
 Write-Host ""
